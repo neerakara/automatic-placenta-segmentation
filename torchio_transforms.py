@@ -8,7 +8,8 @@ import sys
 import torchio as tio
 from torchio.transforms.augmentation.intensity.random_bias_field import RandomBiasField
 
-
+# ======================================================
+# ======================================================
 class ElasticTransform(object):
     """
     A transformation to add random elastic deformation
@@ -18,14 +19,15 @@ class ElasticTransform(object):
         replace: the value in the image to replace
         distr: the distribution of the gaussian to use for replacing values
     """
-    def __init__(self, max_disp= 20, num_control_points=(8, 8, 6), locked_borders=2):
+    def __init__(self,
+                 max_disp = 20,
+                 num_control_points = (8, 8, 6),
+                 locked_borders = 2):
         self.max_disp = max_disp
         self.num_control_points = num_control_points
-        self.transform = RandomElasticDeformation( 
-            max_displacement=max_disp,
-            num_control_points=num_control_points,
-            locked_borders=locked_borders,
-            )
+        self.transform = RandomElasticDeformation(max_displacement = max_disp,
+                                                  num_control_points = num_control_points,
+                                                  locked_borders = locked_borders,)
         # interpolate 0 with mean values
     
     def __call__(self, sample):
@@ -41,64 +43,85 @@ class ElasticTransform(object):
         
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioAffine(object):
-    def __init__(self, scales=0, degrees=(11, 11, 11), translation=(10, 10, 5), default_pad_value='mean', isotropic=False, center='image', image_interpolation='linear'):
+    def __init__(self,
+                 scales = 0,
+                 degrees = (11, 11, 11),
+                 translation = (10, 10, 5),
+                 default_pad_value = 'mean',
+                 isotropic = False,
+                 center = 'image',
+                 image_interpolation = 'linear'):
         '''
         Random affine transformations
-        scales -- Tuple (a1,b1,a2,b2,a3,b3) defining the scaling ranges. The scaling values along each dimension are (s1,s2,s3), where si∼U(ai,bi). 
-                If two values (a,b) are provided, then si∼U(a,b). If only one value x is provided, then si∼U(1−x,1+x). If three values (x1,x2,x3) are provided, then si∼U(1−xi,1+xi). 
-                For example, using scales=(0.5, 0.5) will zoom out the image, making the objects inside look twice as small while preserving the physical size and position of the image bounds.
-        degrees -- tuple (a1,b1,a2,b2,a3,b3) defining rotation in degrees. Rotation sampled as Theta_i ~ U(ai,bi), or Theta_i ~ U(-ai, ai) if only one value per axis provided.
-        translation -- tuple (a1,b1,a2,b2,a3,b3) defining translation ranges in mm. translation t_i ~ U(ai,bi) or t_i ~ U(-a_i,a_i) if no bi provided.
+        scales -- Tuple (a1,b1,a2,b2,a3,b3) defining the scaling ranges.
+                The scaling values along each dimension are (s1,s2,s3), where si∼U(ai,bi). 
+                If two values (a,b) are provided, then si∼U(a,b).
+                If only one value x is provided, then si∼U(1−x,1+x).
+                If three values (x1,x2,x3) are provided, then si∼U(1−xi,1+xi). 
+                For example, using scales=(0.5, 0.5) will zoom out the image,
+                making the objects inside look twice as small while preserving the physical size and position of the image bounds.
+        degrees -- tuple (a1,b1,a2,b2,a3,b3) defining rotation in degrees.
+                   Rotation sampled as Theta_i ~ U(ai,bi), or Theta_i ~ U(-ai, ai) if only one value per axis provided.
+        translation -- tuple (a1,b1,a2,b2,a3,b3) defining translation ranges in mm.
+                       translation t_i ~ U(ai,bi) or t_i ~ U(-a_i,a_i) if no bi provided.
         isotropic -- if True, scaling factor along all dimensions the same.
         center -- if 'image', rotation and scaling will be done about image center. If 'origin', will be performed about origin in real world coordinates.
         default_pad_value -- How to pad images near border after rotation
         image_interpolation -- linear, nearest, bspline
         '''
         
-        self.transform = RandomAffine( 
-            scales=scales,
-            degrees=degrees,
-            translation=translation,
-            default_pad_value=default_pad_value,
-            isotropic=isotropic,
-            center=center,
-            image_interpolation=image_interpolation,
-            )
+        self.transform = RandomAffine(scales = scales,
+                                      degrees = degrees,
+                                      translation = translation,
+                                      default_pad_value = default_pad_value,
+                                      isotropic = isotropic,
+                                      center = center,
+                                      image_interpolation = image_interpolation,)
     
     def __call__(self, sample):
         trans_img = self.transform(sample)
 
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioFlip(object):
-    def __init__(self, axes =(0,1,2), flip_probability=0.5):
-        self.transform = RandomFlip(
-            axes=axes,
-            flip_probability=flip_probability,
-        )
+    def __init__(self,
+                 axes = (0,1,2),
+                 flip_probability = 0.5):
+
+        self.transform = RandomFlip(axes = axes,
+                                    flip_probability = flip_probability,)
     
     def __call__(self, sample):
         trans_img = self.transform(sample)
 
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioNoise(object):
     '''
-        mean – Mean μ of the Gaussian distribution from which the noise is sampled. If two values (a,b) are provided, then μ∼U(a,b). If only one value d is provided, μ∼U(−d,d)
-        std – Standard deviation of the Gaussian distribution from which the noise is sampled. If two values (a,b) are provided, then σ∼U(a,b). If only one value d is provided, σ∼U(0,d).
+        mean – Mean μ of the Gaussian distribution from which the noise is sampled.
+               If two values (a,b) are provided, then μ∼U(a,b).
+               If only one value d is provided, μ∼U(−d,d)
+        std – Standard deviation of the Gaussian distribution from which the noise is sampled.
+              If two values (a,b) are provided, then σ∼U(a,b). If only one value d is provided, σ∼U(0,d).
     '''
     def __init__(self, mean=(0,0), std=(0.25,0.5)):
-        self.transform = RandomNoise(
-            mean=mean,
-            std=std,
-        )
+        self.transform = RandomNoise(mean = mean,
+                                     std = std,)
     
     def __call__(self, sample):
         trans_img = self.transform(sample)
 
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioBlur(object):
     """
     Blur an image using a random Gaussian filter
@@ -118,15 +141,15 @@ class TorchioBlur(object):
 
     """
     def __init__(self, std =(0.25)):
-        self.transform = RandomBlur(
-            std=std
-        )
+        self.transform = RandomBlur(std=std)
     
     def __call__(self,sample):
         trans_img = self.transform(sample)
         
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioGamma(object):
     """
     Randomly change contrast of an image by raising its values to the power γ
@@ -134,15 +157,15 @@ class TorchioGamma(object):
         log_gamma – Tuple (a,b) to compute the exponent γ=e^β, where β∼U(a,b). 
             If a single value d is provided, then β∼U(−d,d). Negative and positive values for this argument perform gamma compression and expansion, respectively. 
     """
-    def __init__(self, log_gamma=(-0.3,0.3)):
-        self.transform = RandomGamma(
-            log_gamma=log_gamma
-        )
+    def __init__(self, log_gamma = (-0.3,0.3)):
+        self.transform = RandomGamma(log_gamma=log_gamma)
     def __call__(self,sample):
         trans_img = self.transform(sample)
 
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioMotion(object):
     """
     Add a random motion artifact to MRI images.
@@ -166,19 +189,23 @@ class TorchioMotion(object):
             Larger values generate more distorted images.
         image_interpolation: Interpolation
     """
-    def __init__(self,degrees=10,translation=10,num_transforms=2,image_interpolation='linear'):
-        self.transform = RandomMotion( 
-            degrees=degrees,
-            translation=translation,
-            num_transforms=num_transforms,
-            image_interpolation=image_interpolation,
-            )
+    def __init__(self,
+                 degrees = 10,
+                 translation = 10,
+                 num_transforms = 2,
+                 image_interpolation = 'linear'):
+        self.transform = RandomMotion(degrees = degrees,
+                                      translation = translation,
+                                      num_transforms = num_transforms,
+                                      image_interpolation = image_interpolation,)
     
     def __call__(self, sample):
         trans_img = self.transform(sample)
 
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioSpike(object):
     """
     Add random spike artifacts
@@ -199,16 +226,16 @@ class TorchioSpike(object):
             Larger values generate more distorted images.
     """
     def __init__(self, num_spikes=1, intensity=(1,3)):
-        self.transform = RandomSpike(
-            num_spikes=num_spikes,
-            intensity=intensity
-        )
+        self.transform = RandomSpike(num_spikes = num_spikes,
+                                     intensity = intensity)
     
     def __call__(self, sample):
         trans_img = self.transform(sample)
 
         return trans_img
 
+# ======================================================
+# ======================================================
 class TorchioBiasField(object):
     """
     Adds bias field to the image
@@ -218,17 +245,16 @@ class TorchioBiasField(object):
         order – Order of the basis polynomial functions.
     """
     def __init__(self, coefficients=0.5,order=3):
-        self.transform = RandomBiasField(
-            coefficients=coefficients,
-            order=order
-        )
+        self.transform = RandomBiasField(coefficients = coefficients,
+                                         order = order)
     
     def __call__(self, sample):
         trans_img = self.transform(sample)
 
         return trans_img
 
-
+# ======================================================
+# ======================================================
 class TorchioIntensity(object):
     """
     A transformation to scale the intensity of an image
@@ -258,6 +284,8 @@ class TorchioIntensity(object):
                 'pad_amnt': sample['pad_amnt']
             })
             
+# ======================================================
+# ======================================================
 class TorchioBrightness(object):
     """
     A transformation to scale the brightness of an image. This can scale either only the
@@ -273,7 +301,8 @@ class TorchioBrightness(object):
 
     def __call__(self, sample):
         scale = random(self.scale[0], self.scale[1])
-        img, label  = sample['img']['data'], sample['label']['data']
+        img = sample['img']['data']
+        label = sample['label']['data']
         if self.full_image:
             img += scale
         else:
@@ -293,7 +322,7 @@ class TorchioBrightness(object):
                 'pad_amnt': sample['pad_amnt']
             })
 
+# ======================================================
+# ======================================================
 def random(lower, upper):
     return np.random.random() * (upper - lower) + lower
-
-

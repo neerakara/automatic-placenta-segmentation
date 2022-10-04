@@ -4,7 +4,11 @@ from medpy.metric.binary import assd as ASSD
 from medpy.metric.binary import hd as Hausdorff_Distance
 from medpy.metric.binary import hd95 as Hausdorff_Distance_95
 
-def metric_time_series(img_4D,metric="None",voxel_spacing=1):
+# ======================================================
+# ======================================================
+def metric_time_series(img_4D,
+                       metric="None",
+                       voxel_spacing=1):
     '''
     img_4D: 4D time series
     metric: "dice", "hausdorff", "hausdorff_95","assd"
@@ -18,17 +22,22 @@ def metric_time_series(img_4D,metric="None",voxel_spacing=1):
         img_1 = img_4D[i-1,:,:,:]
         img_2 = img_4D[i,:,:,:]
         if metric == "dice":
-            stats[i-1] = dice(img_1,img_2)
+            stats[i-1] = dice(img_1, img_2)
         elif metric == "hausdorff":
-            stats[i-1] = Hausdorff_Distance(img_1,img_2,voxelspacing=voxel_spacing)
+            stats[i-1] = Hausdorff_Distance(img_1, img_2, voxelspacing = voxel_spacing)
         elif metric == "hausdorff_95":
-            stats[i-1] = Hausdorff_Distance_95(img_1,img_2,voxelspacing=voxel_spacing)
+            stats[i-1] = Hausdorff_Distance_95(img_1, img_2, voxelspacing = voxel_spacing)
         elif metric == "assd":
-            stats[i-1] = ASSD(img_1,img_2,voxelspacing=voxel_spacing)
+            stats[i-1] = ASSD(img_1, img_2, voxelspacing = voxel_spacing)
 
     return stats
 
-def mean_BOLD_difference(img_ref,label_ref,label_pred, img_2=None):
+# ======================================================
+# ======================================================
+def mean_BOLD_difference(img_ref,
+                         label_ref,
+                         label_pred,
+                         img_2 = None):
     '''
     Computes the normalized mean BOLD difference between two images and their corresponding masks.
     Input:
@@ -42,12 +51,16 @@ def mean_BOLD_difference(img_ref,label_ref,label_pred, img_2=None):
     assert np.array_equal(label_ref, label_ref.astype(bool)) 
     assert np.array_equal(label_pred, label_pred.astype(bool))
     
-    BOLD1 = np.mean(img_ref,where=label_ref)
-    BOLD2 =np.mean(img_ref,where=label_pred) if img_2 is None else np.mean(img_2,where=label_pred)
+    BOLD1 = np.mean(img_ref, where=label_ref)
+    BOLD2 = np.mean(img_ref, where=label_pred) if img_2 is None else np.mean(img_2, where=label_pred)
     
-    return np.abs(BOLD1-BOLD2)/np.abs(BOLD1)
+    return np.abs(BOLD1-BOLD2) / np.abs(BOLD1)
 
-def dice(im1, im2, empty_score=1.0):
+# ======================================================
+# ======================================================
+def dice(im1,
+         im2,
+         empty_score=1.0):
     """
     Computes the Dice coefficient, a measure of set similarity.
     Parameters
@@ -83,6 +96,8 @@ def dice(im1, im2, empty_score=1.0):
 
     return 2. * intersection.sum() / im_sum
 
+# ======================================================
+# ======================================================
 def dice_tensor(im1, im2, empty_score=0.0, thresh=0.5):
     '''
     Computes the Dice coefficient between two tensors, im1 and im2.
@@ -100,3 +115,4 @@ def dice_tensor(im1, im2, empty_score=0.0, thresh=0.5):
     if im_sum == 0:
         return empty_score
     return 2. * intersection.sum().item() / im_sum.item()
+    

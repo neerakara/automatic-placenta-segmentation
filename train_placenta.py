@@ -12,15 +12,27 @@ import torchvision.transforms as transforms
 import argparse
 import pandas as pd
 import math
+import logging
+import utils_vis
+from torch.utils.tensorboard import SummaryWriter
 
-IMG_DIR_NAME = 'image' # subdirectory name where images are stored (per subject) 
+IMG_DIR_NAME = 'volume' # subdirectory name where images are stored (per subject) 
 LABEL_DIR_NAME = 'segmentation' # subdirectory name where labels are stored (per subject)
-DATA_SPLITS = [0.65,0.15,0.2] #train, validation, test split percentages
-PAD_FACTOR = 16 #factor to make images divisible by.
-STORE_IMAGES = True #stores images in RAM. If dataset has images of different sizes, set to False.
+DATA_SPLITS = [0.65, 0.15, 0.2] # train, validation, test split percentages
+PAD_FACTOR = 16 # factor to make images divisible by.
+STORE_IMAGES = True # stores images in RAM. If dataset has images of different sizes, set to False.
 
-def test_model(args, model, test, device, loss_function, inner_boundary_weight=None, outer_boundary_weight=None,
-    boundary_kernel=None, test_set=False):
+# ======================================================
+# ======================================================
+def test_model(args,
+               model,
+               test,
+               device,
+               loss_function,
+               inner_boundary_weight = None,
+               outer_boundary_weight = None,
+               boundary_kernel = None,
+               test_set = False):
     """
     Evaluates the model on the given test set. 
 
@@ -36,54 +48,88 @@ def test_model(args, model, test, device, loss_function, inner_boundary_weight=N
 
     Return: average test loss, average test dice
     """
+
     model.eval()
+    batch_counter = 1
     dice_score = 0
     total_loss = 0
     total_dice = 0
     val_loss = 0
     val_boundary_loss = 0
     sig = nn.Sigmoid()
-    dice_loss = DiceLoss(include_background=True,sigmoid=True) if args.use_Dice_loss else None
+    dice_loss = DiceLoss(include_background = True, sigmoid = True) if args.use_Dice_loss else None
 
     with torch.no_grad():
         for batch in test:
-            images, labels, fn, factor = batch['img']['data'], batch['label']['data'], batch['fn'], batch['90_pct']
-            images, labels = images.to(device,dtype=torch.float), labels.to(device,dtype=torch.float)
+            images = batch['img']['data']
+            labels = batch['label']['data']
+            fn = batch['fn']
+            factor = batch['90_pct']
+            images = images.to(device, dtype = torch.float)
+            labels = labels.to(device, dtype = torch.float)
             predicted = model(images)
             
-            batch_loss, boundary_batch_loss = loss(loss_function, predicted, labels, dice_loss, boundary_kernel=boundary_kernel, inner_boundary_weight=inner_boundary_weight,
-                outer_boundary_weight=outer_boundary_weight, use_Dice_loss=args.use_Dice_loss, dice_loss_weight=args.dice_loss_weight)
+            batch_loss, boundary_batch_loss = loss(loss_function,
+                                                   predicted,
+                                                   labels,
+                                                   dice_loss,
+                                                   boundary_kernel = boundary_kernel,
+                                                   inner_boundary_weight = inner_boundary_weight,
+                                                   outer_boundary_weight = outer_boundary_weight,
+                                                   use_Dice_loss = args.use_Dice_loss,
+                                                   dice_loss_weight = args.dice_loss_weight)
             
-            val_loss+=batch_loss.item()
-            val_boundary_loss+=boundary_batch_loss.item()
+            val_loss += batch_loss.item()
+            val_boundary_loss += boundary_batch_loss.item()
             total_loss += 1
+            batch_counter += 1
 
             predicted = sig(predicted)
+            
             if len(np.shape(predicted)) == 5:
                 predicted = torch.squeeze(predicted,1)
                 labels = torch.squeeze(labels,1)
                 images = torch.squeeze(images,1)
             predicted = (predicted > 0.5).float()
+            
             for i in range(predicted.shape[0]):
                 d = dice_tensor(predicted[i], labels[i])
                 dice_score += d
                 total_dice += 1
+    
     if test_set:
         print_name = 'test'
     else:
         print_name = 'validation'
-    print('Average dice of the network on the {} images: {}'.format(print_name, dice_score / total_dice),flush=True)
-    print('Average loss of the network on the {} images: {}'.format(print_name,
-        val_loss / total_loss),flush=True)
-    print('Average boundary loss of the network on the {} images: {}'.format(print_name,
-        val_boundary_loss / total_loss),flush=True)
+    print('Average dice of the network on the {} images: {}'.format(print_name, dice_score / total_dice), flush=True)
+    print('Average loss of the network on the {} images: {}'.format(print_name, val_loss / total_loss), flush=True)
+    print('Average boundary loss of the network on the {} images: {}'.format(print_name, val_boundary_loss / total_loss), flush=True)
+    
     model.train()
-    return val_loss/total_loss, dice_score/total_dice, val_boundary_loss / total_loss
 
+    return val_loss / total_loss, \
+           dice_score / total_dice, \
+           val_boundary_loss / total_loss
 
-def train_model(args, data_dir, img_dir, label_dir, model_path, transform_str, weighted_bce, loss_output,
-                epochs=500, lr=0.001, data_split=[], aug_severity=0, randomize_img_dataloader=False,
-               inner_boundary_weight=None, outer_boundary_weight=None, boundary_kernel=(7,7,7), load_model_checkpt=False):
+# ======================================================
+# ======================================================
+def train_model(args,
+                data_dir,
+                img_dir,
+                label_dir,
+                model_path,
+                transform_str,
+                weighted_bce,
+                loss_output,
+                epochs=500,
+                lr=0.001,
+                data_split=[],
+                aug_severity=0,
+                randomize_img_dataloader=False,
+                inner_boundary_weight=None,
+                outer_boundary_weight=None,
+                boundary_kernel=(7,7,7),
+                load_model_checkpt=False):
     """
     trains the model. 
 
@@ -106,7 +152,9 @@ def train_model(args, data_dir, img_dir, label_dir, model_path, transform_str, w
     kernel_size: (k,k,k) tuple for boundary kernel size. (tuple)
     load_model_checkpt: Boolean, whether to load the model from the checkpoint, or from scratch. (bool)
     """
+    # ===================================
     # set up the CSV columns
+    # ===================================
     CSV_COLUMNS = ['epoch', 'val_dice', 'val_boundary_loss', 'val_loss', 'train_dice', 'train_boundary_loss', 'train_loss', 'teacher_loss']
     MAX_METRICS = ['val_dice','train_dice']
     MIN_METRICS = ['val_loss', 'train_loss']
@@ -114,132 +162,285 @@ def train_model(args, data_dir, img_dir, label_dir, model_path, transform_str, w
         MIN_METRICS = ['val_boundary_loss', 'val_loss', 'train_boundary_loss', 'train_loss']
     output = []
     dices = []
-    gamma=args.focal_loss_gamma
+    gamma = args.focal_loss_gamma
     start_epoch = 0
     sig = nn.Sigmoid()
     pad_factor = PAD_FACTOR
     batch_size = args.batch_size
+
+    # ===================================
     # load the data set and data loader
-    data = split_train_val(data_dir, img_dir, label_dir, transform_str, data_split, \
-        batch_size = batch_size, pad_factor = pad_factor, \
-         randomize_img_dataloader=randomize_img_dataloader, aug_severity=aug_severity, store_images=STORE_IMAGES)
+    # ===================================
+    data = split_train_val(data_dir,
+                           img_dir,
+                           label_dir,
+                           transform_str,
+                           data_split,
+                           batch_size = batch_size,
+                           pad_factor = pad_factor,
+                           randomize_img_dataloader = randomize_img_dataloader,
+                           aug_severity = aug_severity,
+                           store_images = STORE_IMAGES)
+    
+    # ===================================
     # split into train/test/val
-    train, test, val = data.train, data.test, data.val
+    # ===================================
+    train = data.train
+    test = data.test
+    val = data.val
+    
+    # ===================================
+    # select device - gpu / cpu
+    # ===================================
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device: " + str(device))
-    # set up the loss functions
-    dice_loss = DiceLoss(include_background=True,sigmoid=True,squared_pred=True)
+
+    # ===================================
+    # Create a summary writer
+    # ===================================
+    summary_path = os.path.join(args.save_path, 'summary/')
+    if not os.path.exists(summary_path):
+        os.makedirs(summary_path)
+    writer = SummaryWriter(summary_path)
+    
+    # ===================================
+    # set up the loss functions --- dice
+    # ===================================
+    dice_loss = DiceLoss(include_background = True,
+                         sigmoid = True,
+                         squared_pred = True)
     dice_loss = dice_loss.to(device) 
+
+    # ===================================
+    # set up the loss functions --- binary cross entropy
+    # ===================================
     weight = None
     if weighted_bce:
         weight = torch.ones([1], dtype=torch.float) * util.get_pos_weight(train)
         focal_weight = float(1-1/weight)
-        loss_function = nn.BCEWithLogitsLoss(pos_weight=weight,reduction="none") if not args.use_Focal_loss else FocalLoss(weight=focal_weight, gamma=gamma,reduction="none",include_background=True)
+        loss_function = nn.BCEWithLogitsLoss(pos_weight = weight,
+                                             reduction="none") if not args.use_Focal_loss else FocalLoss(weight = focal_weight,
+                                                                                                         gamma = gamma,
+                                                                                                         reduction = "none",
+                                                                                                         include_background = True)
     else:
         focal_weight = args.focal_loss_alpha
-        loss_function = nn.BCEWithLogitsLoss(reduction="none") if not args.use_Focal_loss else FocalLoss(weight=focal_weight, gamma=gamma,reduction="none",include_background=True)
+        loss_function = nn.BCEWithLogitsLoss(reduction="none") if not args.use_Focal_loss else FocalLoss(weight = focal_weight,
+                                                                                                         gamma = gamma,
+                                                                                                         reduction = "none",
+                                                                                                         include_background = True)
     loss_function = loss_function.to(device)
 
-    # initialize model
+    # ===================================
+    # define model
+    # ===================================
     model = UNet(1)
     model = model.to(device)
+
+    # ===================================
+    # define optimizer
+    # ===================================
     optimizer = torch.optim.Adam(model.parameters(), lr = lr)
-    # load model if necessary
+    
+    # ===================================
+    # load pre-trained model if necessary
+    # ===================================
     if load_model_checkpt:
-        model, optimizer, start_epoch, dices = util.load_checkpt(args.preloaded_model_path, model, optimizer)
+        model, optimizer, start_epoch, dices = util.load_checkpt(args.preloaded_model_path,
+                                                                 model,
+                                                                 optimizer)
         dices = []
         start_epoch = start_epoch - 1
 
     global_step = len(train)*start_epoch
+    
     # optimizer
     # total_steps = len(train) * epochs 
     # lambda1 = lambda global_step: 1.0 - 1.00 * (global_step/ total_steps)
     # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
     
+    # ===================================
     # START TRAINING!
+    # ===================================
     for epoch in range(start_epoch, epochs):
+    
         boundary_running_loss = 0 
         total_running_loss = 0
         total_running_loss_2 = 0
         running_dice = 0
         total_loss = 0
         total_dice = 0
+        batch_counter = 1
         
+        # ===================================
         # save the output CSV
+        # ===================================
         if epoch % 25 == 0 or len(output) == 0:
             df = pd.DataFrame(output, columns=CSV_COLUMNS)
             df.to_csv(loss_output, index=False)
 
-        print('Starting epoch {}/{}'.format(epoch + 1, epochs))
+        logging.info('Starting epoch {}/{}'.format(epoch + 1, epochs))
+        
+        # ===================================
+        # set model to train mode
+        # ===================================
         model.train()
 
+        # ===================================
+        # training iterations
+        # ===================================
         for batch in train:
+            
             global_step += 1
             total_loss += 1
-            # get the data
-            inputs, labels, fn = batch['img']['data'], batch['label']['data'], batch['fn']
-            inputs, labels = inputs.to(device,dtype=torch.float), labels.to(device,dtype=torch.float)
+            batch_counter += 1
 
+            # ===================================
+            # get the data of this batch
+            # ===================================
+            inputs = batch['img']['data']
+            labels = batch['label']['data']
+            fn = batch['fn']
+
+            # ===================================
+            # transfer to device
+            # ===================================
+            inputs = inputs.to(device, dtype = torch.float)
+            labels = labels.to(device, dtype = torch.float)
+
+            # ===================================
+            # https://discuss.pytorch.org/t/what-does-the-backward-function-do/9944
+            # optimizer.zero_grad() clears x.grad for every parameter x in the optimizer.
+            # It’s important to call this before loss.backward(), otherwise you’ll accumulate the gradients from multiple passes.
+            # ===================================
             optimizer.zero_grad()
+
+            # ===================================
             # pass through model and compute predictions
+            # ===================================
             outputs = model(inputs)
+            
+            # ===================================
             # compute the loss
-            loss1, loss1_boundary = loss(loss_function, outputs, labels, dice_loss, boundary_kernel=boundary_kernel, inner_boundary_weight=inner_boundary_weight,
-                outer_boundary_weight=outer_boundary_weight, use_Dice_loss=args.use_Dice_loss, dice_loss_weight=args.dice_loss_weight)
+            # ===================================
+            loss1, loss1_boundary = loss(loss_function,
+                                         outputs,
+                                         labels,
+                                         dice_loss,
+                                         boundary_kernel = boundary_kernel,
+                                         inner_boundary_weight = inner_boundary_weight,
+                                         outer_boundary_weight = outer_boundary_weight,
+                                         use_Dice_loss = args.use_Dice_loss,
+                                         dice_loss_weight = args.dice_loss_weight)
+            
             boundary_running_loss += loss1_boundary.item() 
             total_weighted_loss = loss1
-            total_running_loss+= loss1.item()            
+            total_running_loss+= loss1.item()
+
+            # ===================================
+            # https://pytorch.org/docs/stable/generated/torch.Tensor.backward.html
+            # https://discuss.pytorch.org/t/what-does-the-backward-function-do/9944
+            # loss.backward() computes dloss/dx for every parameter x which has requires_grad=True.
+            # These are accumulated into x.grad for every parameter x.
+            # In pseudo-code: x.grad += dloss/dx
+            # ===================================            
             total_weighted_loss.backward()
+
+            # ===================================
+            # https://discuss.pytorch.org/t/what-does-the-backward-function-do/9944
+            # optimizer.step updates the value of x using the gradient x.grad.
+            # For example, the SGD optimizer performs:
+            # x += -lr * x.grad
+            # ===================================
             optimizer.step()
            
+            # ===================================
             # calculate dice            
+            # ===================================
             predicted = sig(outputs)
             if len(np.shape(predicted)) == 5:
-                predicted = torch.squeeze(predicted,1)
-                labels = torch.squeeze(labels,1)
+                predicted = torch.squeeze(predicted, 1)
+                labels = torch.squeeze(labels, 1)
             for i in range(predicted.shape[0]):
                 dice_tensor_score = dice_tensor(predicted[i], labels[i])
                 running_dice += dice_tensor_score
                 total_dice += 1
+
+        # ===================================
+        # For the last batch after every some epochs, write images, labels and predictions to TB
+        # ===================================
+        if epoch % 25 == 0:
+            writer.add_figure('Training',
+                               utils_vis.show_images_labels_predictions(inputs, labels, sig(outputs)),
+                               global_step=epoch+1)
             
-        
-        val_loss, dice_score, val_boundary_loss = test_model(
-            args,
-            model,
-            val,
-            device,
-            loss_function,
-            inner_boundary_weight=inner_boundary_weight,
-            outer_boundary_weight=outer_boundary_weight,
-            boundary_kernel=boundary_kernel,
-            test_set=False
-        )
-        #scheduler.step()
-        print('Average dice of the network on the train images: {}'.format(running_dice / total_dice),flush=True)
-        print('Average loss of the network on the train images: {}'.format(total_running_loss / total_loss),flush=True)
-        print('Average boundary loss of the network on the train images: {}'.format(boundary_running_loss / total_loss),flush=True)
+        # ===================================
+        # We have reached the end of this epoch.
+        # Evaluate performance on the validation set.
+        # ===================================
+        val_loss, dice_score, val_boundary_loss = test_model(args,
+                                                             model,
+                                                             val,
+                                                             device,
+                                                             loss_function,
+                                                             inner_boundary_weight = inner_boundary_weight,
+                                                             outer_boundary_weight = outer_boundary_weight,
+                                                             boundary_kernel = boundary_kernel,
+                                                             test_set = False)
+        # scheduler.step()
+        logging.info('Average dice of the network on the train images: {}'.format(running_dice / total_dice))
+        logging.info('Average loss of the network on the train images: {}'.format(total_running_loss / total_loss))
+        logging.info('Average boundary loss of the network on the train images: {}'.format(boundary_running_loss / total_loss))
 
-        output.append([epoch + 1, dice_score, val_boundary_loss, val_loss, running_dice/total_dice, boundary_running_loss/total_loss, total_running_loss/total_loss, total_running_loss_2/total_loss])
+        # also add these scalars to the tensorboard log
+        writer.add_scalar("TRAINING/Avg_DICE", running_dice / total_dice, epoch+1) # these are computed for each batch with the weights at that iteration
+        writer.add_scalar("TRAINING/Avg_LOSS", total_running_loss / total_loss, epoch+1)
+        writer.add_scalar("TRAINING/Avg_BOUNDARY_LOSS", boundary_running_loss / total_loss, epoch+1)
+        writer.add_scalar("VALIDATION/Avg_DICE", dice_score, epoch+1) # these are computed at the end of the epoch
+        writer.add_scalar("VALIDATION/Avg_LOSS", val_loss, epoch+1)
+        writer.add_scalar("VALIDATION/Avg_BOUNDARY_LOSS", val_boundary_loss, epoch+1)
+        # flush all these to disk
+        writer.flush()
 
-        # save model with best dice scores so far
+        output.append([epoch + 1,
+                       dice_score,
+                       val_boundary_loss,
+                       val_loss,
+                       running_dice / total_dice,
+                       boundary_running_loss / total_loss,
+                       total_running_loss / total_loss,
+                       total_running_loss_2 / total_loss])
+
+        # ===================================
+        # save model with best validation dice scores so far
+        # ===================================
         if len(dices) == 0 or dice_score > max(dices) or epoch % 25==0:
-            checkpoint = {
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'dices'    : dices
-                        }
+            
+            checkpoint = {'epoch': epoch + 1,
+                          'state_dict': model.state_dict(),
+                          'optimizer': optimizer.state_dict(),
+                          'dices': dices}
+
             if len(dices) == 0 or dice_score > max(dices):
                 is_best=True
             else:
                 is_best=False
-            util.save_checkpt(checkpoint, model_path, best_model_name='model_best', is_best=False)
+
+            util.save_checkpt(checkpoint,
+                              model_path,
+                              best_model_name = 'model_best',
+                              is_best = False)
             if is_best:
-                util.save_checkpt(checkpoint, model_path, best_model_name='model_best', is_best=True)
+                util.save_checkpt(checkpoint,
+                                  model_path,
+                                  best_model_name = 'model_best',
+                                  is_best = True)
             best_dice = epoch + 1
             dices.append(dice_score)
         
+        # ===================================
         # every 25 epochs, also save the best metrics
+        # ===================================
         if epoch % 25 == 0 or is_best:
             df = pd.DataFrame(output, columns=CSV_COLUMNS)
             max_metrics, min_metrics = [], []
@@ -253,18 +454,49 @@ def train_model(args, data_dir, img_dir, label_dir, model_path, transform_str, w
                 min_metrics.append(s)
             best_of_each_df = pd.concat(max_metrics+min_metrics)
             directory = os.path.dirname(loss_output)
-            best_of_each_df.to_csv(os.path.join(directory,'best_metrics.csv'),index=False)  
+            best_of_each_df.to_csv(os.path.join(directory, 'best_metrics.csv'),index=False)  
 
+        # ===================================
+        # forget useless things at the end of the epoch
+        # ===================================
+        torch.cuda.empty_cache()
 
+    # ===================================
     ##### TRAINING FINISHED ######
-    #save last round, in case not caught by epoch % n 
+    # ===================================
+
+    # ===================================
+    # close the summary writer
+    # ===================================
+    writer.flush()
+    
+    # ===================================
+    # save last round, in case not caught by epoch % n 
+    # ===================================
     df = pd.DataFrame(output, columns=CSV_COLUMNS)
     df.to_csv(loss_output, index=False)
-    model, optimizer, start_epoch, dices = util.load_checkpt(os.path.join(model_path,'model_best.pt'), model, optimizer)
-    test_model(args, model, test, device, loss_function, inner_boundary_weight=inner_boundary_weight, outer_boundary_weight=outer_boundary_weight, boundary_kernel=boundary_kernel, test_set=True)
+    model, optimizer, start_epoch, dices = util.load_checkpt(os.path.join(model_path, 'model_best.pt'), model, optimizer)
+    test_model(args,    
+               model,
+               test,
+               device,
+               loss_function,
+               inner_boundary_weight = inner_boundary_weight,
+               outer_boundary_weight = outer_boundary_weight,
+               boundary_kernel = boundary_kernel,
+               test_set = True)
 
-
-def loss(loss_function,outputs, labels, dice_loss_handle=None, boundary_kernel = (3,3,3), inner_boundary_weight = 0, outer_boundary_weight = 0, dice_loss_weight=1.0, use_Dice_loss=False):
+# ======================================================
+# ======================================================
+def loss(loss_function,
+         outputs,
+         labels,
+         dice_loss_handle = None,
+         boundary_kernel = (3,3,3),
+         inner_boundary_weight = 0,
+         outer_boundary_weight = 0,
+         dice_loss_weight = 1.0,
+         use_Dice_loss = False):
     '''
     Computes the loss function
     Inputs:
@@ -282,36 +514,50 @@ def loss(loss_function,outputs, labels, dice_loss_handle=None, boundary_kernel =
             total_loss
             boundary_loss
     '''
-    boundary_loss = boundary_weighted_loss(
-        loss_function,
-        outputs, 
-        labels, 
-        patch_size=boundary_kernel, 
-        boundaries_add_factor=inner_boundary_weight, 
-        out_boundary_factor=outer_boundary_weight,
-        just_boundary=True
-    )
-    total_weighted_loss = boundary_weighted_loss(
-        loss_function,
-        outputs, 
-        labels, 
-        patch_size=boundary_kernel, 
-        boundaries_add_factor=inner_boundary_weight, 
-        out_boundary_factor=outer_boundary_weight,
-    )
+    boundary_loss = boundary_weighted_loss(loss_function,
+                                           outputs, 
+                                           labels, 
+                                           patch_size = boundary_kernel, 
+                                           boundaries_add_factor = inner_boundary_weight, 
+                                           out_boundary_factor = outer_boundary_weight,
+                                           just_boundary = True)
+    
+    total_weighted_loss = boundary_weighted_loss(loss_function,
+                                                 outputs, 
+                                                 labels, 
+                                                 patch_size = boundary_kernel, 
+                                                 boundaries_add_factor = inner_boundary_weight, 
+                                                 out_boundary_factor = outer_boundary_weight,)
                 
     if use_Dice_loss:           
         print('using Dice loss')
-        dice_l = dice_loss_weight*dice_loss_handle(outputs,labels)
+        dice_l = dice_loss_weight*dice_loss_handle(outputs, labels)
         total_weighted_loss = total_weighted_loss + dice_l
     else:
         dice_l = 0
 
     return total_weighted_loss, boundary_loss
 
-
-def main(args, data_path, model_path, output_path, epochs, lr, transform_str, weighted_bce, loss_output, img_dir, label_dir, data_split, 
- aug_severity, randomize_img_dataloader,  inner_boundary_weight, outer_boundary_weight, boundary_kernel, load_model_checkpt):
+# ======================================================
+# ======================================================
+def main(args,
+         data_path,
+         model_path,
+         output_path,
+         epochs,
+         lr,
+         transform_str,
+         weighted_bce,
+         loss_output,
+         img_dir,
+         label_dir,
+         data_split, 
+         aug_severity,
+         randomize_img_dataloader,
+         inner_boundary_weight,
+         outer_boundary_weight,
+         boundary_kernel,
+         load_model_checkpt):
     """
     Trains a model on the given data. 
 
@@ -334,95 +580,259 @@ def main(args, data_path, model_path, output_path, epochs, lr, transform_str, we
     volSARatio_weight: weight on the volume to surface area loss.
     """
     print('Starting training')
-    train_model(args, data_path, img_dir, label_dir, model_path, transform_str, weighted_bce, loss_output, epochs=epochs, lr=lr, data_split=data_split, 
-                aug_severity=aug_severity, randomize_img_dataloader=randomize_img_dataloader,
-               inner_boundary_weight=inner_boundary_weight, outer_boundary_weight=outer_boundary_weight, boundary_kernel=boundary_kernel, load_model_checkpt=load_model_checkpt)
+    train_model(args,
+                data_path,
+                img_dir,
+                label_dir,
+                model_path,
+                transform_str,
+                weighted_bce,
+                loss_output,
+                epochs = epochs,
+                lr = lr,
+                data_split = data_split, 
+                aug_severity = aug_severity,
+                randomize_img_dataloader = randomize_img_dataloader,
+                inner_boundary_weight = inner_boundary_weight,
+                outer_boundary_weight = outer_boundary_weight,
+                boundary_kernel = boundary_kernel,
+                load_model_checkpt = load_model_checkpt)
 
-
+# ======================================================
+# ======================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='train unet model for placenta mri scans')
-    parser.add_argument('--data_path', dest='data_path', 
-        default = '~/Documents/data/')
-    parser.add_argument('--save_path', dest='save_path', default='~/Documents/model-output/test001/', help='full path to location where experiment outputs will go')
-    parser.add_argument('--epochs', dest='epochs', default=4000)
-    parser.add_argument('--lr', dest='lr', default=0.001)
-    parser.add_argument('--load_model', action='store_true', help='load a pretrained model')
-    parser.add_argument('--transform', dest='transform', default='affine,flip,intensity,noise,gamma,elastic,brightness')
-    parser.add_argument('--use_weighted_bce', dest='weighted_bce', action='store_true') 
-    parser.add_argument('--inner_boundary_weight', default=1,
-                    type=float, help="additive weight on all boundary to scale loss. Will only be placenta boundary if out_boundary_factor is specified")   
-    parser.add_argument('--boundary_kernel', default=11,
-                    type=int, help="3d kernel size (should be odd int) to determine boundaries")
-    parser.add_argument('--outer_boundary_weight', default=40,
-                    type=float, help="additive weight on non-placenta boundary to scale loss")          
-    parser.add_argument('--randomize_image_dataloader', action="store_true")#to make the dataloader randomize which image it picks from each subject. A batch is considered # subjects in this case.
-    parser.add_argument('--aug_severity', dest='aug_severity', default=0, type=int, help='integer for augmentation severity, 0 to 4.')
-    parser.add_argument('--use_Dice_loss', action='store_true')
-    parser.add_argument('--use_Focal_loss', action='store_true') #if true, will replace cross-entropy
-    parser.add_argument('--focal_loss_weight', default=1.0, type=float)
-    parser.add_argument('--focal_loss_gamma', default=2.0, type=float)
-    parser.add_argument('--dice_loss_weight', default=1.0, type=float)
-    parser.add_argument('--focal_loss_alpha', default=0.5, type=float)
-    parser.add_argument('--batch_size', default=8, type=int)
+    parser.add_argument('--data_path',
+                        dest='data_path', 
+                        default = '/data/vision/polina/projects/fetal/projects/placenta-segmentation/data/split-nifti-processed/')
+                        # /data/scratch/nkarani/data/placenta-segmentation/split-nifti-processed/
+                        # /data/vision/polina/projects/fetal/projects/placenta-segmentation/data/split-nifti-processed/
+    parser.add_argument('--save_path',
+                        dest='save_path',
+                        default='/data/scratch/nkarani/projects/qcseg/models/try1/',
+                        help='full path to location where experiment outputs will go')
+                        # /data/scratch/nkarani/projects/qcseg/models/try1/
+                        # '~/Documents/model-output/test001/'
+    parser.add_argument('--epochs',
+                        dest='epochs',
+                        default=4000)
+    parser.add_argument('--lr',
+                        dest='lr',
+                        default=0.001)
+    parser.add_argument('--load_model',
+                        action='store_true',
+                        help='load a pretrained model')
+    parser.add_argument('--transform',
+                        dest='transform',
+                        default='affine,flip,intensity,noise,gamma,elastic,brightness')
+    parser.add_argument('--use_weighted_bce',
+                        dest='weighted_bce',
+                        action='store_true') 
+    parser.add_argument('--inner_boundary_weight',
+                        default=1,
+                        type=float,
+                        help="additive weight on all boundary to scale loss. Will only be placenta boundary if out_boundary_factor is specified")   
+    parser.add_argument('--boundary_kernel',
+                        default=11,
+                        type=int,
+                        help="3d kernel size (should be odd int) to determine boundaries")
+    parser.add_argument('--outer_boundary_weight',
+                        default=40,
+                        type=float,
+                        help="additive weight on non-placenta boundary to scale loss")          
+    parser.add_argument('--randomize_image_dataloader',
+                        action="store_true") # to make the dataloader randomize which image it picks from each subject. A batch is considered # subjects in this case.
+    parser.add_argument('--aug_severity',
+                        dest='aug_severity',
+                        default=1,
+                        type=int,
+                        help='integer for augmentation severity, 0 to 4.')
+    parser.add_argument('--use_Dice_loss',
+                        action='store_true')
+    parser.add_argument('--use_Focal_loss',
+                        action='store_true') #if true, will replace cross-entropy
+    parser.add_argument('--focal_loss_weight',
+                        default=1.0,
+                        type=float)
+    parser.add_argument('--focal_loss_gamma',
+                        default=2.0,
+                        type=float)
+    parser.add_argument('--dice_loss_weight',
+                        default=1.0,
+                        type=float)
+    parser.add_argument('--focal_loss_alpha',
+                        default=0.5,
+                        type=float)
+    parser.add_argument('--batch_size',
+                        default=4,
+                        type=int)
+    parser.add_argument('--which_data_split',
+                        default='random', # random / existing_folds
+                        help='whether to use existing data folds or create new ones')
+    parser.add_argument('--training_folds',
+                        default=[1,2,3,5],
+                        nargs='+',
+                        type=int,
+                        help="folds for training") #[1,2,3,4]
+    parser.add_argument('--test_folds',
+                        default=[1],
+                        nargs='+',
+                        type=int,
+                        help="folds for testing")
+    parser.add_argument('--run_number',
+                        default=1,
+                        type=int,
+                        help="index for which run out of multiple runs with random initializations. The random seed is set to this number.")   
     args = parser.parse_args()
 
+    # ===================================
     # set up some directories to save
+    # ===================================
     if not os.path.exists(args.save_path):
         os.makedirs(args.save_path)
-    loss_output = os.path.join(args.save_path , 'output.csv')
+    loss_output = os.path.join(args.save_path, 'output.csv')
     model_path = os.path.join(args.save_path, 'model')
     output_path = os.path.join(args.save_path, 'predicted')
     
-    #check whether we need to load an existing model, or train from scratch.
+    # ===================================
+    # check whether we need to load an existing model, or train from scratch.
+    # ===================================
     load_model_checkpt = args.load_model
+    
+    # ===================================
     # get full path for the pre-loaded model
+    # ===================================
     if load_model_checkpt:
-        args.preloaded_model_path = os.path.join(os.getcwd(),'model','model_PIPPI.pt')
+        args.preloaded_model_path = os.path.join(os.getcwd(), 'model', 'model_PIPPI.pt')
+    
+    # ===================================
     # random seeds
-    np.random.seed(0)
-    torch.manual_seed(0)
-    #kernel size for boundary estimation
+    # ===================================
+    np.random.seed(args.run_number)
+    torch.manual_seed(args.run_number)
+
+    # ===================================
+    # kernel size for boundary estimation
+    # ===================================
     k = int(args.boundary_kernel)
     kernel_size = (k,k,k)
+    
+    # ===================================
     # flag to use weighted BCE
+    # ===================================
     use_weights = args.weighted_bce
     
+    # ============================
     # create the dataset splits
-    subjs_dict = {}
-    data_dir_list = util.listdir_nohidden_sort_numerical(args.data_path, list_dir=True, sort_digit=True)
-    N_subj = len(data_dir_list)
-    train_split, val_split, test_split = DATA_SPLITS[0], DATA_SPLITS[1], DATA_SPLITS[2]
-    num_test_subj = math.ceil(test_split*N_subj)
-    num_rem_subj = N_subj - num_test_subj
-    num_train_subj = math.floor(train_split*N_subj)
-    num_val_subj = num_rem_subj - num_train_subj
-    # randomly sort the dataset and split
-    rem_split, test_split = torch.utils.data.random_split(data_dir_list, [num_rem_subj, num_test_subj],generator=torch.Generator().manual_seed(0))
-    subjs_dict['test'] =  [test_split.dataset[i] for i in test_split.indices]
-    subjs_rem = [rem_split.dataset[i] for i in rem_split.indices]
-    # split remaining subjects into train/val
-    train_split, val_split = torch.utils.data.random_split(subjs_rem, [num_train_subj, num_val_subj],generator=torch.Generator().manual_seed(0))
-    subjs_dict['train'] = [train_split.dataset[i] for i in train_split.indices]
-    subjs_dict['val'] = [val_split.dataset[i] for i in val_split.indices]
+    # ============================
+    if args.which_data_split == 'random':
+        # get list of subject dirs
+        data_dir_list = util.listdir_nohidden_sort_numerical(args.data_path,
+                                                             list_dir = True,
+                                                             sort_digit = True)
 
-    #point to the appropriate dataset subdirectories
+        # ===================================    
+        # get fraction to be assigned to train test and val
+        # ===================================
+        train_split = DATA_SPLITS[0]
+        val_split = DATA_SPLITS[1]
+        test_split = DATA_SPLITS[2]
+
+        # ===================================
+        # compute number of train test and val subjects
+        # ===================================
+        N_subj = len(data_dir_list)
+        num_test_subj = math.ceil(test_split*N_subj)
+        num_rem_subj = N_subj - num_test_subj
+        num_train_subj = math.floor(train_split*N_subj)
+        num_val_subj = num_rem_subj - num_train_subj
+        
+        # ===================================
+        # randomly sort the dataset and split
+        # ===================================
+        rem_split, test_split = torch.utils.data.random_split(data_dir_list,
+                                                              [num_rem_subj, num_test_subj],
+                                                              generator=torch.Generator().manual_seed(0))
+        subjs_dict = {}
+        subjs_dict['test'] =  [test_split.dataset[i] for i in test_split.indices]
+        subjs_rem = [rem_split.dataset[i] for i in rem_split.indices]
+        
+        # ===================================
+        # split remaining subjects into train/val
+        # ===================================
+        train_split, val_split = torch.utils.data.random_split(subjs_rem,
+                                                               [num_train_subj, num_val_subj],
+                                                               generator=torch.Generator().manual_seed(0))
+        subjs_dict['train'] = [train_split.dataset[i] for i in train_split.indices]
+        subjs_dict['val'] = [val_split.dataset[i] for i in val_split.indices]
+
+    elif args.which_data_split == 'existing_folds':
+
+        fold_name = 'fold'
+        train_split_ratio = 0.81
+        subjs = {'train': [], 'val': [], 'test': []}
+        logging.info('Training and Validation folds: ' + str(args.training_folds) + '\n')
+        logging.info('Test folds: '+ str(args.test_folds) + '\n')
+
+        for i in args.training_folds:
+            subjs['train'].append(fold_name + '-' + str(i) + '.txt')
+        for i in args.test_folds:
+            subjs['test'].append(fold_name + '-' + str(i) + '.txt')
+        
+        # split the train into train and val, and separate the test data.
+        # first, load the subject lists
+        subjs_dict = {}
+        subjs_dict['test'] = util.extract_subj_names(args.data_path, subjs['test'])
+        # remove duplicates by converting to set
+        subjs_tmp = sorted(list(set(util.extract_subj_names(args.data_path, subjs['train']))))
+        # get the splits
+        subjs_dict['train'], subjs_dict['val'] = util.split_unique_train_val(subjs_tmp, train_split_ratio)
+
+    # ===================================
+    # point to the appropriate dataset subdirectories
+    # ===================================
     img_dir = IMG_DIR_NAME
     label_dir = LABEL_DIR_NAME
 
+    # ===================================
     # data loader parameter: randomly samples 1 of N_l images per subject during each epoch of training
+    # ===================================
     randomize_img_dataloader = args.randomize_image_dataloader
     
-    # save the folds to load in later when evaluating the model.
+    # ===================================
+    # save the folds to load in later when evaluating the model
+    # ===================================
     if not os.path.exists(model_path):
         os.makedirs(model_path)
     np.save(os.path.join(model_path, 'model-folds.npy'), subjs_dict)
     if not os.path.exists(output_path):
         os.makedirs(output_path)
+
+    # ===================================
     # save the argparse arguments
+    # ===================================
     f = open(os.path.join(os.path.dirname(loss_output), 'args.txt'), 'w')
     f.write(repr(args))
     f.close()
 
+    # ===================================
     # train
-    main(args, args.data_path, model_path, output_path, int(args.epochs), float(args.lr), args.transform, use_weights, loss_output, img_dir, label_dir, subjs_dict, 
-        args.aug_severity, randomize_img_dataloader, float(args.inner_boundary_weight), float(args.outer_boundary_weight), kernel_size, load_model_checkpt)
+    # ===================================
+    main(args,
+         args.data_path,
+         model_path,
+         output_path,
+         int(args.epochs),
+         float(args.lr),
+         args.transform,
+         use_weights,
+         loss_output,
+         img_dir,
+         label_dir,
+         subjs_dict, 
+         args.aug_severity,
+         randomize_img_dataloader,
+         float(args.inner_boundary_weight),
+         float(args.outer_boundary_weight),
+         kernel_size,
+         load_model_checkpt)

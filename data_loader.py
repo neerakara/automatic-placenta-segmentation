@@ -9,16 +9,33 @@ from torchvision import transforms
 import torchio as tio
 import multiprocessing
 from os.path import exists
+import logging
 
-#data loader
+# data loader
 num_workers = 8
 print('NUM WORKERS: '+str(num_workers))
 SEGMENTATION_KEY = "" #optional keys used to identify specific files within a folder
 IMAGE_KEY = ""
 
+# ==================================================================
+# setup logging
+# ==================================================================
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
+# ======================================================
+# ======================================================
 class DataLoader():
-    def __init__(self, data_dir, subjs, img_dir, label_dir, batch_size=1, randomize_img_per_subj=False, transform=None, pad_factor=1, test_only=False, store_images=True):
+    def __init__(self,
+                 data_dir,
+                 subjs,
+                 img_dir,
+                 label_dir,
+                 batch_size = 1,
+                 randomize_img_per_subj = False,
+                 transform = None,
+                 pad_factor = 1,
+                 test_only = False,
+                 store_images = True):
         """
         A Dataloader for the train, test, and val sets, on the raw images.
         Each subject has two directories within, segmentation and volume.
@@ -44,16 +61,44 @@ class DataLoader():
         self.imgs_map = {}
         self.labels_map = {}
 
-        self.imgs_map, self.labels_map = self.get_map_directories(self.data_dir,self.img_dir,self.label_dir,img_key=IMAGE_KEY, segmentation_key=SEGMENTATION_KEY)
+        self.imgs_map, self.labels_map = self.get_map_directories(self.data_dir,
+                                                                  self.img_dir,
+                                                                  self.label_dir,
+                                                                  img_key = IMAGE_KEY,
+                                                                  segmentation_key = SEGMENTATION_KEY)
         if not test_only:
-            self.train = self.get_loader(subjs['train'], transform=transform, batch_size=batch_size, shuffle=True, is_train=randomize_img_per_subj, pad_factor=pad_factor, store_images=store_images)
-            self.val = self.get_loader(subjs['val'], batch_size=batch_size, shuffle=False, is_train=False,pad_factor=pad_factor,store_images=store_images)
+            
+            self.train = self.get_loader(subjs['train'],
+                                         transform = transform,
+                                         batch_size = batch_size,
+                                         shuffle = True,
+                                         is_train = randomize_img_per_subj,
+                                         pad_factor = pad_factor,
+                                         store_images = store_images)
+            
+            self.val = self.get_loader(subjs['val'],
+                                       batch_size = batch_size,
+                                       shuffle = False,
+                                       is_train = False,
+                                       pad_factor = pad_factor,
+                                       store_images = store_images)
         else:
             self.train, self.val = None, None
-        self.test = self.get_loader(subjs['test'], batch_size=batch_size, shuffle=False, is_train=False,pad_factor=pad_factor,store_images=store_images)
+        self.test = self.get_loader(subjs['test'],
+                                    batch_size = batch_size,
+                                    shuffle = False,
+                                    is_train = False,
+                                    pad_factor = pad_factor,
+                                    store_images = store_images)
         
-
-    def get_map_directories( self, data_dir, img_dir, label_dir, img_key=None, segmentation_key=None):
+    # ==================================================
+    # ==================================================
+    def get_map_directories(self,
+                            data_dir,
+                            img_dir,
+                            label_dir,
+                            img_key = None,
+                            segmentation_key = None):
         '''
         Method to get image and label map directories
         Inputs:
@@ -69,7 +114,8 @@ class DataLoader():
         for fn in os.listdir(data_dir):
             imgs = []
             if os.path.isdir(os.path.join(data_dir,fn)):
-                for subname in util.listdir_nohidden(os.path.join(data_dir,fn,img_dir)): #lists the directory in ascending order
+                # lists the directory in ascending order
+                for subname in util.listdir_nohidden(os.path.join(data_dir, fn, img_dir)):
                     # check if we have the proper key
                     if subname.find(img_key) >= 0:
                         imgs.append(subname)
@@ -79,7 +125,8 @@ class DataLoader():
             labels = []
             if os.path.isdir(os.path.join(data_dir,fn)):
                 if label_dir is not None:
-                    for subname in util.listdir_nohidden(os.path.join(data_dir,fn,label_dir)): #lists the directory in ascending order
+                    # lists the directory in ascending order
+                    for subname in util.listdir_nohidden(os.path.join(data_dir, fn, label_dir)): 
                         # check if we have the proper key
                         if subname.find(segmentation_key) >= 0:
                             labels.append(subname)
@@ -87,7 +134,16 @@ class DataLoader():
             
         return imgs_map, labels_map
 
-    def get_loader(self, files, transform=None, batch_size=1, shuffle=True, store_images=True, is_train=True, pad_factor=1):
+    # ==================================================
+    # ==================================================
+    def get_loader(self,
+                   files,
+                   transform = None,
+                   batch_size = 1,
+                   shuffle = True,
+                   store_images = True,
+                   is_train = True,
+                   pad_factor = 1):
         """
         gets a single data loader. 
 
@@ -103,11 +159,36 @@ class DataLoader():
 
         Return: a dataloader for the specified set. 
         """
-        self.imgs, self.labels, self.subj_names = self.get_all_filenames(files, self.img_dir, self.label_dir, self.imgs_map, self.labels_map, is_train=is_train)
-        return data.DataLoader(MriDataset(self.data_dir, self.img_dir, self.label_dir, self.subj_names, self.imgs, self.labels, pad_factor=pad_factor, is_train = is_train, transforms=transform, store_images=store_images), num_workers=num_workers, batch_size=batch_size, shuffle=shuffle)
+        self.imgs, self.labels, self.subj_names = self.get_all_filenames(files,
+                                                                         self.img_dir,
+                                                                         self.label_dir,
+                                                                         self.imgs_map,
+                                                                         self.labels_map,
+                                                                         is_train = is_train)
+        
+        return data.DataLoader(MriDataset(self.data_dir,
+                                          self.img_dir,
+                                          self.label_dir,
+                                          self.subj_names,
+                                          self.imgs,
+                                          self.labels,
+                                          pad_factor = pad_factor,
+                                          is_train = is_train,
+                                          transforms = transform,
+                                          store_images = store_images),
+                                num_workers = num_workers,
+                                batch_size = batch_size,
+                                shuffle = shuffle)
 
-
-    def get_all_filenames(self, files, img_dir, label_dir, imgs_map, labels_map, is_train=False):
+    # ==================================================
+    # ==================================================
+    def get_all_filenames(self,
+                          files,
+                          img_dir,
+                          label_dir,
+                          imgs_map,
+                          labels_map,
+                          is_train = False):
         '''
         files: list of filenames from which to load subject names. (list)
             we assume that the files containing the subjects are located in self.data_dir. 
@@ -127,11 +208,11 @@ class DataLoader():
         for fn in subjs:
             if fn in imgs_map:
                 keys_to_extract.append(fn)
-        imgs = { key: imgs_map[key] for key in keys_to_extract}
+        imgs = {key: imgs_map[key] for key in keys_to_extract}
         if labels_map is not None:
             labels = {key: labels_map[key] for key in keys_to_extract}
 
-        #if not training, instead we will pass a list of all the image and label paths
+        # if not training, instead we will pass a list of all the image and label paths
         subj_names = list(imgs.keys())
         subj_names.sort()
 
@@ -155,6 +236,8 @@ class DataLoader():
 
         return imgs, labels, subj_names      
 
+    # ==================================================
+    # ==================================================
     def read_subjs(self, fn):
         """
         reads a list of subjects out of a file. 
@@ -170,6 +253,8 @@ class DataLoader():
                 subjs.add(line.rstrip())
         return subjs
 
+# ======================================================
+# ======================================================
 class MriDataset(data.Dataset):
     """
     creates a dataset from the given images/labels.
@@ -186,7 +271,17 @@ class MriDataset(data.Dataset):
     pad_factor: scalar: factor to make images divisible by
     store_images: boolean, whether to store images in memory or use I/O when accesing data.
     """
-    def __init__(self, data_path, img_path, label_path, subj_names, img, label, is_train, pad_factor=1, transforms=None, store_images=True):
+    def __init__(self,
+                 data_path,
+                 img_path,
+                 label_path,
+                 subj_names,
+                 img,
+                 label,
+                 is_train,
+                 pad_factor = 1,
+                 transforms = None,
+                 store_images = True):
         self.subj_names = subj_names
         self.data_path = data_path
         self.img_dir = img_path
@@ -198,13 +293,36 @@ class MriDataset(data.Dataset):
         self.pad_factor = pad_factor
         self.store_images = store_images
 
-
         # load all the images, and all the labels as a tensor (or in torch.io, load them sequentially)
-        self.img_tensor, self.label_tensor, self.img_affine, self.label_affine, self.highs, self.filenames, \
-            self.filenames_label, self.filename_img_paths, self.filename_label_paths, self.idx_map, self.subj_names_nontrain, self.pad_amnts = self.get_img_tensor( self.data_path, self.img_dir, self.label_dir, self.imgs, self.labels, self.is_train, store_images=self.store_images)
+        self.img_tensor, \
+        self.label_tensor, \
+        self.img_affine, \
+        self.label_affine, \
+        self.highs, \
+        self.filenames, \
+        self.filenames_label, \
+        self.filename_img_paths, \
+        self.filename_label_paths, \
+        self.idx_map, \
+        self.subj_names_nontrain, \
+        self.pad_amnts = self.get_img_tensor(self.data_path,
+                                             self.img_dir,
+                                             self.label_dir,
+                                             self.imgs,
+                                             self.labels,
+                                             self.is_train,
+                                             store_images = self.store_images)
      
-
-    def get_img_tensor( self, data_path, img_dir, label_dir, imgs_dict, labels_dict, is_train=True, store_images=True):
+    # ==================================================
+    # ==================================================
+    def get_img_tensor(self,
+                       data_path,
+                       img_dir,
+                       label_dir,
+                       imgs_dict,
+                       labels_dict,
+                       is_train = True,
+                       store_images = True):
         '''
         Get a tensor of all the images (or labels)
         Params:
@@ -235,9 +353,10 @@ class MriDataset(data.Dataset):
         subj_names_non_train = list()
         if not is_train:
             for (img_filename, label_filename) in zip(imgs_dict, labels_dict):
-                #grab the names
+                # grab the names
                 img_name = img_filename.split('/')[-1]
                 img_path = img_filename
+                logging.info(img_path)
                 label_name = label_filename.split('/')[-1]
                 label_path = label_filename
                 subj_name = img_filename.split('/')[0]
@@ -246,23 +365,36 @@ class MriDataset(data.Dataset):
                 filenames_label.append(label_name)
                 filename_label_paths.append(label_path)
                 subj_names_non_train.append(subj_name)
-                #get the image, label
+                # get the image, label
                 if store_images:
-                    img, pct, low, affine, pad_amnt = self.get(os.path.join(data_path,img_filename), is_img=True)
+                    img, pct, low, affine, pad_amnt = self.get(os.path.join(data_path, img_filename), is_img=True)
                     label, _, _, affine_label, _ = self.get(os.path.join(data_path, label_filename), is_img=False)
                     label = np.around(np.clip(label,0,1)).astype(np.int8)
-                    imgs, labels, img_affines, label_affines, highs, pad_amnts = self.store_data_RAM(imgs, labels, highs, img_affines, label_affines, pad_amnts, img, label, pct, low, affine, affine_label, pad_amnt)
+                    imgs, labels, img_affines, label_affines, highs, pad_amnts = self.store_data_RAM(imgs,
+                                                                                                     labels,
+                                                                                                     highs,
+                                                                                                     img_affines,
+                                                                                                     label_affines,
+                                                                                                     pad_amnts,
+                                                                                                     img,
+                                                                                                     label,
+                                                                                                     pct,
+                                                                                                     low,
+                                                                                                     affine,
+                                                                                                     affine_label,
+                                                                                                     pad_amnt)
         else:
             ctr = int(0)
             for (subj_img, subj_label) in zip(imgs_dict.keys(), labels_dict.keys()):
                 label_map = np.array([])
                 assert subj_img == subj_label
                 for (img_filename, label_filename) in zip(imgs_dict[subj_img], labels_dict[subj_label]):
-                    #grab the names
+                    # grab the names
                     img_name = img_filename
                     label_name = label_filename
-                    img_path = os.path.join( subj_img,img_dir, img_filename)
-                    label_path = os.path.join(subj_label,label_dir, label_filename)
+                    img_path = os.path.join(subj_img, img_dir, img_filename)
+                    logging.info(img_path)
+                    label_path = os.path.join(subj_label, label_dir, label_filename)
                     filenames.append(img_name)
                     filename_img_paths.append(img_path)
                     filenames_label.append(label_name)
@@ -271,17 +403,54 @@ class MriDataset(data.Dataset):
                     label_map = np.append(label_map, int(ctr))
                     index_map[subj_img] = label_map
                     ctr = ctr+1
-                    #get the image, label
+                    # get the image, label
                     if store_images:
                         img, pct, low, affine, pad_amnt = self.get(os.path.join(data_path, subj_img, img_dir, img_filename), is_img=True)
                         label, _, _, affine_label,_ = self.get(os.path.join(data_path, subj_label, label_dir, label_filename), is_img=False)
                         label = np.around(np.clip(label,0,1)).astype(np.int8)
-                        imgs, labels, img_affines, label_affines, highs, pad_amnts = self.store_data_RAM(imgs, labels, highs, img_affines, label_affines, pad_amnts, img, label, pct, low, affine, affine_label, pad_amnt)
+                        imgs, labels, img_affines, label_affines, highs, pad_amnts = self.store_data_RAM(imgs,
+                                                                                                         labels,
+                                                                                                         highs,
+                                                                                                         img_affines,
+                                                                                                         label_affines,
+                                                                                                         pad_amnts,
+                                                                                                         img,
+                                                                                                         label,
+                                                                                                         pct,
+                                                                                                         low,
+                                                                                                         affine,
+                                                                                                         affine_label,
+                                                                                                         pad_amnt)
 
-        return imgs, labels, img_affines, label_affines, highs, filenames, filenames_label, filename_img_paths, filename_label_paths, index_map, subj_names_non_train, pad_amnts
-
-    
-    def store_data_RAM(self, imgs, labels, highs, img_affines, label_affines, pad_amnts, img, label, pct, low, affine, affine_label, pad_amnt):
+        return imgs, \
+               labels, \
+               img_affines, \
+               label_affines, \
+               highs, \
+               filenames, \
+               filenames_label, \
+               filename_img_paths, \
+               filename_label_paths, \
+               index_map, \
+               subj_names_non_train, \
+               pad_amnts
+   
+    # ==================================================
+    # ==================================================
+    def store_data_RAM(self,
+                       imgs,
+                       labels,
+                       highs,
+                       img_affines,
+                       label_affines,
+                       pad_amnts,
+                       img,
+                       label,
+                       pct,
+                       low,
+                       affine,
+                       affine_label,
+                       pad_amnt):
         '''
         Stores images, labels, image intensity parameters, image NIFTI header, and pad amounts in RAM
         '''
@@ -289,12 +458,14 @@ class MriDataset(data.Dataset):
             highs = np.vstack((pct, low))
         else:
             highs = np.hstack((highs, np.vstack((pct, low)) ))
-        #stack them
+        
+        # stack them
         img = np.expand_dims(img, 0)
         label = np.expand_dims(label, 0)
         affine = np.expand_dims(affine,0)
         affine_label = np.expand_dims(affine_label,0)
         pad_amnt = np.expand_dims(pad_amnt, 0)
+        
         if imgs.size == 0:
             imgs = img
             labels = label
@@ -308,10 +479,18 @@ class MriDataset(data.Dataset):
             label_affines = np.concatenate((label_affines,affine_label),axis=0)
             pad_amnts = np.concatenate((pad_amnts,pad_amnt),axis=0)
         
-        return imgs, labels, img_affines, label_affines, highs, pad_amnts
+        return imgs, \
+               labels, \
+               img_affines, \
+               label_affines, \
+               highs, \
+               pad_amnts
 
-    
-    def normalize(self, img, pct=95):
+    # ==================================================
+    # ==================================================
+    def normalize(self,
+                  img,
+                  pct=95):
         """
         linearly scales the percentile (pct) of the image to 1. 
         """
@@ -322,7 +501,12 @@ class MriDataset(data.Dataset):
         img = (img - low) / (high-low)
         return img, high, low
 
-    def pad_img(self, img, factor=16, mode='minimum'):
+    # ==================================================
+    # ==================================================
+    def pad_img(self,
+                img,
+                factor = 16,
+                mode = 'minimum'):
         """
         pads an image to be divisible by factor
         """
@@ -343,7 +527,12 @@ class MriDataset(data.Dataset):
         img = np.pad(img,pad_amnt,mode=mode) 
         return img, pad_amnt
 
-    def get(self, path, is_img=False):
+    # ==================================================
+    # Loads the image / label from the source file (e.g. nii) as a numpy array
+    # ==================================================
+    def get(self,
+            path,
+            is_img = False):
         """
         gets an image/label given its path. 
 
@@ -357,38 +546,53 @@ class MriDataset(data.Dataset):
         img = nib.load(path)
         affine = img.affine
         img = np.array(img.dataobj)
-        #condition for 4D cases.
+       
+        # condition for 4D cases.
         if len(img.shape) == 4:
             if img.shape[3] == 1:
                 img = img[:,:,:,0]
         img = img.astype(float)
+       
         if is_img:
             img, high, low = self.normalize(img)
-            img, pad_amnt = self.pad_img(img,factor=pad_factor,mode='minimum')
+            img, pad_amnt = self.pad_img(img,
+                                         factor = pad_factor,
+                                         mode = 'minimum')
         else:
-            img, pad_amnt = self.pad_img(img,factor=pad_factor,mode='constant')
+            img, pad_amnt = self.pad_img(img,
+                                         factor = pad_factor,
+                                         mode = 'constant')
             high = -1
             low = -1
-        return img, high, low, affine, pad_amnt
+        
+        return img, \
+               high, \
+               low, \
+               affine, \
+               pad_amnt
     
-    def get_img_idx(self,idx):
+    # ==================================================
+    # ==================================================
+    def get_img_idx(self, idx):
         '''
         Gets the appropriate index from the images
         '''
         if self.is_train:
             subj_names = self.subj_names
             subj_name = subj_names[idx]
-            #now, grab the list of images corresponding to this subject.
+            # now, grab the list of images corresponding to this subject.
             inds = self.idx_map[subj_name]
-            #randomly sample an image to grab
+            # randomly sample an image to grab
             idx_img = np.random.randint(inds[0],high=inds[-1]+1,size=1)[0]
         else:
             idx_img = idx
             subj_name = self.subj_names_nontrain[idx]
-        
+
         return idx_img, subj_name
 
-    def get_item_stored(self,idx):
+    # ==================================================
+    # ==================================================
+    def get_item_stored(self, idx):
         '''
         Used to grab data from memory
         '''
@@ -404,8 +608,22 @@ class MriDataset(data.Dataset):
         img_path = self.filename_img_paths[idx_img]
         label_path = self.filename_label_paths[idx_img]
         pad_amnt = self.pad_amnts[idx_img]
-        return img, label, img_affine, label_affine, pct, low, subj_name, img_name, label_name, img_path, label_path, pad_amnt
+        
+        return img, \
+               label, \
+               img_affine, \
+               label_affine, \
+               pct, \
+               low, \
+               subj_name, \
+               img_name, \
+               label_name, \
+               img_path, \
+               label_path, \
+               pad_amnt
 
+    # ==================================================
+    # ==================================================
     def get_item_io(self, idx):
         '''
         grabs data from disk
@@ -418,9 +636,21 @@ class MriDataset(data.Dataset):
         img_path = self.filename_img_paths[idx_img]
         label_path = self.filename_label_paths[idx_img]
         img_name = self.filenames[idx_img]
-        return img, label, img_affine, label_affine, pct, low, subj_name, img_name, label_name, img_path, label_path, pad_amnt 
+        return img, \
+               label, \
+               img_affine, \
+               label_affine, \
+               pct, \
+               low, \
+               subj_name, \
+               img_name, \
+               label_name, \
+               img_path, \
+               label_path, \
+               pad_amnt 
             
-
+    # ==================================================
+    # ==================================================
     def __getitem__(self, idx):
         """
         gets a sample with given index. 
@@ -447,29 +677,33 @@ class MriDataset(data.Dataset):
             img, label, img_affine, label_affine, pct, low, subj_name, img_name, label_name, img_path, label_path, pad_amnt = self.get_item_stored(idx)
         else:
             img, label, img_affine, label_affine, pct, low, subj_name, img_name, label_name, img_path, label_path, pad_amnt = self.get_item_io(idx)
+        
         img, label = np.expand_dims(img, 0), np.expand_dims(label, 0)
-        sample = tio.Subject({
-            'img': tio.ScalarImage(tensor=img),
-            'label': tio.LabelMap(tensor=label),
-            'fn': img_name,
-            'fn_img_path': img_path,
-            'fn_label_path': label_path,
-            'fn_label': label_name,
-            '90_pct': pct,
-            'low' : low,
-            'affine': img_affine,
-            'label_affine': label_affine,
-            'subj_name': subj_name,
-            'pad_amnt': pad_amnt
-        })
+        
+        sample = tio.Subject({'img': tio.ScalarImage(tensor=img),
+                              'label': tio.LabelMap(tensor=label),
+                              'fn': img_name,
+                              'fn_img_path': img_path,
+                              'fn_label_path': label_path,
+                              'fn_label': label_name,
+                              '90_pct': pct,
+                              'low' : low,
+                              'affine': img_affine,
+                              'label_affine': label_affine,
+                              'subj_name': subj_name,
+                              'pad_amnt': pad_amnt})
 
         if self.transform != None:
             sample = self.transform(sample) # make sure to use include and exclude keywords
+        
         return sample
 
+    # ==================================================
     # need to specify this to iterate through the dataset. 
+    # ==================================================
     def __len__(self):
         if self.is_train:
             return len(self.subj_names)
         else:
             return len(self.imgs)
+            

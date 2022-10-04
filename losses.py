@@ -3,8 +3,15 @@ import torch.nn.functional as F
 import torch
 import sys 
 
-
-def boundary_weighted_loss(loss_function, output, target, boundaries_add_factor=None, patch_size=(7,7,7), just_boundary=False, out_boundary_factor=None):
+# ======================================================
+# ======================================================
+def boundary_weighted_loss(loss_function,
+                           output,
+                           target,
+                           boundaries_add_factor=None,
+                           patch_size=(7,7,7),
+                           just_boundary=False,
+                           out_boundary_factor=None):
     """    
     Params:
     loss_function: instantiated class of the loss function
@@ -23,42 +30,49 @@ def boundary_weighted_loss(loss_function, output, target, boundaries_add_factor=
 
     epsilon = sys.float_info.epsilon                                         
 
-    loss = loss_function(output, target)
+    loss = loss_function(output,
+                         target)
     
-    #weight boundaries using probability mask
+    # weight boundaries using probability mask
     if boundaries_add_factor != None and boundaries_add_factor!=0: 
         
-        #reshaping output 
+        # reshaping output 
         if len(np.shape(output)) == 4:
             new_shape = (1,) + output.shape
-            reshaped_output = torch.reshape(target, new_shape)
+            reshaped_output = torch.reshape(target,
+                                            new_shape)
         else:
             reshaped_output = target
 
-        #calculate appropriate padding based on kernel size
+        # calculate appropriate padding based on kernel size
         padding = int((patch_size[0]-1)/2)
 
-        #3d avg pooling to make boundary mask
-        output_avg_pool = F.avg_pool3d(reshaped_output, kernel_size= patch_size, stride =(1,1,1), padding=padding, count_include_pad = False) 
+        # 3d avg pooling to make boundary mask
+        output_avg_pool = F.avg_pool3d(reshaped_output,
+                                       kernel_size = patch_size,
+                                       stride = (1,1,1),
+                                       padding = padding,
+                                       count_include_pad = False) 
         reshaped_boundaries = (output_avg_pool > epsilon) & (output_avg_pool < 1-epsilon)
         reshaped_boundaries_int = reshaped_boundaries.int()                            
 
         if out_boundary_factor != None: 
-            #determine outside and inside boundary  
+            # determine outside and inside boundary  
             outside_boundary = reshaped_boundaries_int.float() - target == 1.0
             outside_boundary = outside_boundary.int()
             inside_boundary = reshaped_boundaries_int.float() - outside_boundary.float() == 1.0
             inside_boundary = inside_boundary.int()
 
-            #weight both boundary masks and apply
+            # weight both boundary masks and apply
             weighted_inner_boundary = (inside_boundary.float() * boundaries_add_factor) 
             weighted_outer_boundary = (outside_boundary.float() * out_boundary_factor)
             weighted_boundaries = weighted_inner_boundary + weighted_outer_boundary
             final_weighted_boundaries = torch.reshape(weighted_boundaries, target.shape)
         else: 
-            #weight boundary mask and apply 
+            # weight boundary mask and apply 
             weighted_boundaries = reshaped_boundaries_int.float() * boundaries_add_factor
-            final_weighted_boundaries = torch.reshape(weighted_boundaries, target.shape)
+            final_weighted_boundaries = torch.reshape(weighted_boundaries,
+                                                      target.shape)
         
         additive_loss = (loss * final_weighted_boundaries)
         if just_boundary:
@@ -70,3 +84,4 @@ def boundary_weighted_loss(loss_function, output, target, boundaries_add_factor=
     mloss = torch.mean(loss)
 
     return mloss
+    

@@ -4,7 +4,12 @@ import util
 IMG_DIR = 'img'
 LABEL_DIR = 'label'
 
-def preprocess(data_paths, shape=(112, 112, 80), distr=(30, 10), labels=False):
+# ======================================================
+# ======================================================
+def preprocess(data_paths,
+               shape = (112, 112, 80),
+               distr = (30, 10),
+               labels = False):
     """
     Preprocesses the data by resizing (crops out of frame and pads images that are too small)
     as well as adding noise to any introduced padding. 
@@ -15,6 +20,7 @@ def preprocess(data_paths, shape=(112, 112, 80), distr=(30, 10), labels=False):
     distr: the distribution of the values to pad the images with
     labels: bool that is True if data_paths contains label directories, False otherwise. 
     """
+    
     for dir in data_paths:
         processed = '{}_processed'.format(dir)
         if not os.path.exists(processed):

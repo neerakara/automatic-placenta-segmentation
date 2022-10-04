@@ -14,7 +14,19 @@ import math
 from torchio_transforms import *
 from data_loader import DataLoader
 
-def split_train_val(data_dir, img_dir, label_dir, transforms_string, data_split, batch_size=8, pad_factor=1, randomize_img_dataloader=False, aug_severity=0, store_images=True,test_only=False):
+# ======================================================
+# ======================================================
+def split_train_val(data_dir,
+                    img_dir,
+                    label_dir,
+                    transforms_string,
+                    data_split,
+                    batch_size = 8,
+                    pad_factor = 1,
+                    randomize_img_dataloader = False,
+                    aug_severity = 0,
+                    store_images = True,
+                    test_only = False):
     """
     Gets a dataloader with the train, test, and validation sets. 
 
@@ -34,12 +46,25 @@ def split_train_val(data_dir, img_dir, label_dir, transforms_string, data_split,
     test_only: bool. If True, creates only a test set.
     Return: a dataloader for the train, test, and validation sets. 
     """
-    transform = build_transforms(transforms_string, aug_severity=aug_severity)
-    return DataLoader(data_dir, data_split, img_dir, label_dir, \
-             batch_size=batch_size, transform=transform, pad_factor = pad_factor, randomize_img_per_subj=randomize_img_dataloader, store_images=store_images,test_only=test_only)
+    transform = build_transforms(transforms_string,
+                                 aug_severity=aug_severity)
+    
+    return DataLoader(data_dir,
+                      data_split,
+                      img_dir,
+                      label_dir,
+                      batch_size = batch_size,
+                      transform = transform,
+                      pad_factor = pad_factor,
+                      randomize_img_per_subj = randomize_img_dataloader,
+                      store_images = store_images,
+                      test_only = test_only)
 
-
-def build_transforms(tr,aug_severity=0,use_teacher_learning=False):
+# ======================================================
+# ======================================================
+def build_transforms(tr,
+                     aug_severity = 0,
+                     use_teacher_learning = False):
     """
     Builds a list of transformations to use for training. 
     
@@ -50,38 +75,106 @@ def build_transforms(tr,aug_severity=0,use_teacher_learning=False):
     """
     if tr == "none":
         return None
+    
     transform = []
+    
     aug_params = get_augmentation_params(severity=aug_severity)
+    
     for s in tr.split(','):
+    
+        # ==================================================
+        # 'intensity': [[0.8,1.25]]
+        # x = c*x
+        # ==================================================
         if s == 'intensity':
             transform.append(TorchioIntensity(aug_params['intensity'][0]))
+
+        # ==================================================
+        # 'affine': [(22,22,22), (10,10,5)],
+        # https://torchio.readthedocs.io/transforms/augmentation.html#randomaffine
+        # no scale changes are applied
+        # ==================================================
         if s == 'affine':
-            transform.append(TorchioAffine(degrees=aug_params['affine'][0], translation=aug_params['affine'][1]))
+            transform.append(TorchioAffine(degrees = aug_params['affine'][0],
+                                           translation = aug_params['affine'][1])) 
+    
+        # ==================================================
+        # 'flip': [(0,1,2),(0.25)],
+        # https://torchio.readthedocs.io/transforms/augmentation.html#randomflip
+        # Probability that the image will be flipped. This is computed on a per-axis basis.
+        # ==================================================
         if s == 'flip':
-            transform.append(TorchioFlip(axes=aug_params['flip'][0], flip_probability=aug_params['flip'][1]))
+            transform.append(TorchioFlip(axes = aug_params['flip'][0],
+                                         flip_probability = aug_params['flip'][1])) 
+    
+        # ==================================================
+        # https://torchio.readthedocs.io/transforms/augmentation.html#randomnoise
+        # 'noise': [(0.0,0.0),(0.25)],
+        # Mean is sampled from U(0,0)
+        # STD is sampled from U(0,0.25)
+        # ==================================================
         if s == 'noise':
-            transform.append(TorchioNoise(mean=aug_params['noise'][0], std=aug_params['noise'][1]))
+            transform.append(TorchioNoise(mean = aug_params['noise'][0],
+                                          std = aug_params['noise'][1]))
+    
+        # ==================================================
+        # https://torchio.readthedocs.io/transforms/augmentation.html#randomelasticdeformation
+        # 'elastic': [(10),(5)],
+        # max_displacement for each control point is ~U(0, max_displacement) in each direction
+        # num_control_points – Number of control points along each dimension.
+        #                       If a single value  is passed, then same value is used for all dims.
+        #                       Smaller number of control points implies smoother deformations.
+        #                       The minimum number of control points is 4 as this transform uses cubic B-splines to interpolate displacement.
+        # ==================================================
         if s == 'elastic':
-            transform.append(ElasticTransform(max_disp=aug_params['elastic'][0], num_control_points=aug_params['elastic'][1])) # max_disp=20, num_control_points=(8,8,6) upper limit on these values
+            transform.append(ElasticTransform(max_disp = aug_params['elastic'][0],
+                                              num_control_points = aug_params['elastic'][1])) # max_disp=20, num_control_points=(8,8,6) upper limit on these values
+    
         if s == 'motion':
-            transform.append(TorchioMotion(degrees=aug_params['motion'][0], translation=aug_params['motion'][1], num_transforms=aug_params['motion'][2])) #20, 20, 5
+            transform.append(TorchioMotion(degrees = aug_params['motion'][0],
+                                           translation = aug_params['motion'][1],
+                                           num_transforms = aug_params['motion'][2])) #20, 20, 5 # 'motion': [(5),(5),(2)],
+    
         if s == 'spike':
-            transform.append(TorchioSpike(num_spikes=aug_params['spike'][0], intensity=aug_params['spike'][1])) #.25, 1.5
+            transform.append(TorchioSpike(num_spikes = aug_params['spike'][0],
+                                          intensity = aug_params['spike'][1])) #.25, 1.5 # 'spike': [(1),(0.1,0.5)],
+    
         if s == 'bias':
-            transform.append(TorchioBiasField(coefficients=aug_params['bias'][0], order=aug_params['bias'][1])) #1, 3
+            transform.append(TorchioBiasField(coefficients = aug_params['bias'][0],
+                                              order = aug_params['bias'][1])) #1, 3 # 'bias': [(0.5),(1)],
+    
         if s == 'blur':
-            transform.append(TorchioBlur(std=aug_params['blur'][0])) #.75
+            transform.append(TorchioBlur(std = aug_params['blur'][0])) #.75 # 'blur': [(0.25)],
+    
+        # ==================================================
+        # 'gamma': [(-0.25,0.25)],
+        # https://torchio.readthedocs.io/transforms/augmentation.html#randomgamma
+        # x = x**gamma
+        # gamma = exp(beta)
+        # beta ~ U(-0.25, 0.25) ==> gamma ~ (0.8, 1.2)
+        # ==================================================
         if s == 'gamma':
-            transform.append(TorchioGamma(log_gamma=aug_params['gamma'][0])) #-.75,.75
+            transform.append(TorchioGamma(log_gamma = aug_params['gamma'][0])) #-.75,.75 
+    
+        # ==================================================
+        # 'brightness':[(-0.15,0.15)]
+        # as full_image is set to false, x = x+c only when label = 1.
+        # ==================================================
         if s == 'brightness':
-            transform.append(TorchioBrightness(scale=aug_params['brightness'][0],full_image=False)) 
+            transform.append(TorchioBrightness(scale = aug_params['brightness'][0],
+                                               full_image = False))  
     
     return transforms.Compose(transform)
 
-
-def append_img_4d_dict(img_dictionary,subj_key,img):
+# ======================================================
+# ======================================================
+def append_img_4d_dict(img_dictionary,
+                       subj_key,
+                       img):
     '''
-    Appends an image to a dictionary. Builds a 4D tensor for time series. Assumes images are ordered.
+    Appends an image to a dictionary.
+    Builds a 4D tensor for time series.
+    Assumes images are ordered.
     inputs:
             img_dictionary: dictionary
             subj_key: key, usually subject name (string)
@@ -100,8 +193,9 @@ def append_img_4d_dict(img_dictionary,subj_key,img):
 
     return img_dictionary
 
-
-def read_subjs( fn):
+# ======================================================
+# ======================================================
+def read_subjs(fn):
     """
     reads a list of subjects out of a file. 
 
@@ -116,7 +210,10 @@ def read_subjs( fn):
             subjs.add(line.rstrip())
     return subjs
 
-def extract_subj_names(data_path, files):
+# ======================================================
+# ======================================================
+def extract_subj_names(data_path,
+                       files):
     '''
         Reads the list of subjects in a file.
 
@@ -130,7 +227,50 @@ def extract_subj_names(data_path, files):
         subjs.extend(read_subjs(os.path.join(data_path, f)))
     return subjs
 
+# ======================================================
+# ======================================================
+def find_unique_subj_name(subj_name):
+    '''
+    
+    '''
+    split = subj_name.split('-')
+    if(len(split)>2):
+        subj_name = "-".join(split[0:-1])
+    return subj_name
 
+# ======================================================
+# ======================================================
+def split_unique_train_val(subjs,
+                           train_split_ratio=0.81):
+    '''
+    Split train/validation set based on patient.
+    prevents things like MAP-C507-L and MAP-C507-R from being split.
+    '''
+    subj_unique = list(set([find_unique_subj_name(f) for f in subjs]))
+    num_train_subjs = math.ceil(train_split_ratio * len(subj_unique))
+    num_val_subjs = len(subj_unique) - num_train_subjs
+    num_split_subjects = num_train_subjs, num_val_subjs
+    train_subjs, val_subjs = torch.utils.data.random_split(subj_unique, num_split_subjects,generator=torch.Generator().manual_seed(1))
+    train_subjs_unique = [train_subjs.dataset[i] for i in train_subjs.indices]
+    val_subjs_unique = [val_subjs.dataset[i] for i in val_subjs.indices]
+    # now, get the real names, and add to the list
+    tr_subjs = []
+    val_subjs = []
+    
+    for idn, names in enumerate(train_subjs_unique):
+        for i, s in enumerate(subjs):
+            if s.find(names)>=0:
+                tr_subjs.append(s)
+    
+    for idn, names in enumerate(val_subjs_unique):
+        for i, s in enumerate(subjs):
+            if s.find(names)>=0:
+                val_subjs.append(s)
+
+    return tr_subjs, val_subjs
+
+# ======================================================
+# ======================================================
 def listdir_nohidden(path):
     '''
     Args:
@@ -141,11 +281,14 @@ def listdir_nohidden(path):
     '''
     onlyFiles = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
     onlyFiles = [f for f in onlyFiles if not f.startswith('.')]
-    onlyFiles.sort(key=lambda f: int(''.join(filter(str.isdigit, f)) or -1))
+    onlyFiles.sort(key = lambda f: int(''.join(filter(str.isdigit, f)) or -1))
     return onlyFiles
 
-
-def listdir_nohidden_sort_numerical(path, list_dir=False, sort_digit=True):
+# ======================================================
+# ======================================================
+def listdir_nohidden_sort_numerical(path,
+                                    list_dir = False,
+                                    sort_digit = True):
     '''
     Args:
         path: directory path (string)
@@ -156,33 +299,46 @@ def listdir_nohidden_sort_numerical(path, list_dir=False, sort_digit=True):
     '''
     if list_dir:
         onlyFiles = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
+
     else:
         onlyFiles = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+
     onlyFiles = [f for f in onlyFiles if not f.startswith('.')]
+
     if sort_digit:
         onlyFiles.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
+    
     else:
         onlyFiles = sorted(onlyFiles)
+    
     return onlyFiles
 
-
-def save_code_dir(code_dir, save_dir):
+# ======================================================
+# ======================================================
+def save_code_dir(code_dir,
+                  save_dir):
     '''
         Function to save the directory with all the code during experiment run time.
 
     '''
     root_path = os.path.dirname(code_dir)
     zipf = zipfile.ZipFile(os.path.join(save_dir,'code.zip'), 'w', zipfile.ZIP_DEFLATED)
+    
     for root, dirs, files in os.walk(code_dir):
         for file in files:
             file_path = os.path.join(root, file)
             relative_path = os.path.join('code/',os.path.relpath(file_path, root_path))
             zipf.write(file_path, arcname=relative_path) 
             #zipf.write(os.path.join(root, file))
+    
     zipf.close()
 
-
-def save_checkpt(state, checkpoint_dir, best_model_name='model_best', is_best=False):
+# ======================================================
+# ======================================================
+def save_checkpt(state,
+                 checkpoint_dir,
+                 best_model_name = 'model_best',
+                 is_best = False):
     '''
     Save a model. Saves either a checkpoint, or the best model, or both. For the best
     model, simply copies over.
@@ -195,15 +351,21 @@ def save_checkpt(state, checkpoint_dir, best_model_name='model_best', is_best=Fa
         
     '''
     save_name = 'model_checkpoint.pt'
+    
     f_path = os.path.join(checkpoint_dir , save_name)
+    
     if not is_best:
         torch.save(state, f_path)
+    
     if is_best:
         best_fpath = os.path.join(checkpoint_dir, best_model_name + '.pt')
         shutil.copyfile(f_path, best_fpath)
 
-
-def load_checkpt(checkpoint_fpath, model, optimizer=None):
+# ======================================================
+# ======================================================
+def load_checkpt(checkpoint_fpath,
+                 model,
+                 optimizer=None):
     '''
     Loads a model checkpoint. Uses this to load the state.
     Inputs:
@@ -219,12 +381,19 @@ def load_checkpt(checkpoint_fpath, model, optimizer=None):
         checkpoint = torch.load(checkpoint_fpath)
     else:
         checkpoint = torch.load(checkpoint_fpath,map_location=torch.device('cpu'))
+    
     model.load_state_dict(checkpoint['state_dict'])
+    
     if optimizer is not None:
         optimizer.load_state_dict(checkpoint['optimizer'])
-    return model, optimizer, checkpoint['epoch'], checkpoint['dices']
+    
+    return model, \
+           optimizer, \
+           checkpoint['epoch'], \
+           checkpoint['dices']
 
-
+# ======================================================
+# ======================================================
 def rand_bool(p_true):
     """
     generates a boolean that is true with given probability. 
@@ -238,7 +407,8 @@ def rand_bool(p_true):
         return True
     return False
 
-
+# ======================================================
+# ======================================================
 def make_dir_if_not_exist(dir_path): 
     """
     makes a directory at the given path if it doesn't exist
@@ -247,7 +417,8 @@ def make_dir_if_not_exist(dir_path):
         os.makedirs(dir_path)
     return dir_path
 
-
+# ======================================================
+# ======================================================
 def get_augmentation_params(severity=0):
     '''
     Gets a set of augmentation parameters to use torchio. 
@@ -342,10 +513,13 @@ def get_augmentation_params(severity=0):
 
     return aug_params
 
-
-def get_per_patient_stats(img_names, metric_scores):
+# ======================================================
+# ======================================================
+def get_per_patient_stats(img_names,
+                          metric_scores):
     '''
-    Returns a dictionary with per-patient stats. Assumes the naming convention MAP-C303, etc...
+    Returns a dictionary with per-patient stats.
+    Assumes the naming convention MAP-C303, etc...
     Inputs:
         img_names: list of image names
         metric_scores: list of corresponding metric scores
@@ -364,11 +538,12 @@ def get_per_patient_stats(img_names, metric_scores):
         for i in inds:
             metric_ct = metric_ct + metric_scores[i]
             ct = ct + 1
-        metric_patient[name] = metric_ct/ct
+        metric_patient[name] = metric_ct / ct
     
     return metric_patient
 
-
+# ======================================================
+# ======================================================
 def crop_range(img, shape, dim):
     """
     Computes the range of indices in the resized images for a given dimension. 
@@ -387,7 +562,8 @@ def crop_range(img, shape, dim):
     else:
         return list(range(0, shape[dim]))
 
-
+# ======================================================
+# ======================================================
 def get_crop_indices(img, shape):
     """
     Computes the range of indices in the resized images where the old image will be placed. 
@@ -399,9 +575,12 @@ def get_crop_indices(img, shape):
     Return: a list containing the range of indices in the resized image
     where the original image will be placed. 
     """
-    return crop_range(img, shape, 0), crop_range(img, shape, 1), crop_range(img, shape, 2)
+    return crop_range(img, shape, 0), \
+           crop_range(img, shape, 1), \
+           crop_range(img, shape, 2)
 
-
+# ======================================================
+# ======================================================
 def img_range(img, shape, dim):
     """
     Computes the range of indices in the original image that will be placed in the new image,
@@ -420,7 +599,8 @@ def img_range(img, shape, dim):
         offset = (img.shape[dim] - shape[dim]) // 2
         return list(range(offset, offset + shape[dim]))
 
-
+# ======================================================
+# ======================================================
 def get_img_indices(img, shape):
     """
     Computes the range of indices in the original image that will be placed in the new image.
@@ -431,9 +611,13 @@ def get_img_indices(img, shape):
 
     Return: a list of indices. 
     """
-    return img_range(img, shape, 0), img_range(img, shape, 1), img_range(img, shape, 2)
+    return img_range(img, shape, 0), \
+           img_range(img, shape, 1), \
+           img_range(img, shape, 2)
 
-def unpad_img(img,pad_amnt):
+# ======================================================
+# ======================================================
+def unpad_img(img, pad_amnt):
     '''
     unpads an image.
     inputs: img: HxWxD numpy array
@@ -442,9 +626,16 @@ def unpad_img(img,pad_amnt):
             unpadded image
     '''
     sz = np.shape(img)
-    return img[pad_amnt[0]:sz[0]-pad_amnt[1],pad_amnt[2]:sz[1]-pad_amnt[3],pad_amnt[4]:sz[2]-pad_amnt[5]]
+    return img[pad_amnt[0] : sz[0] - pad_amnt[1],
+               pad_amnt[2] : sz[1] - pad_amnt[3],
+               pad_amnt[4] : sz[2] - pad_amnt[5]]
 
-def crop_or_pad(img, shape, distr, labels=False):
+# ======================================================
+# ======================================================
+def crop_or_pad(img,
+                shape,
+                distr,
+                labels=False):
     """
     crops or pads an image to the new shape, filling padding with noise. 
 
@@ -458,15 +649,21 @@ def crop_or_pad(img, shape, distr, labels=False):
     """
     x, y, z = get_crop_indices(img, shape)
     new_img = np.zeros(shape)
+    
     if not labels:
         new_img = np.random.normal(loc=distr[0], scale=distr[1], size=shape)
         new_img[new_img < 0] = 0
+    
     x_crop, y_crop, z_crop = get_crop_indices(img, shape)
+    
     x_img, y_img, z_img = get_img_indices(img, shape)
+    
     new_img[np.ix_(x_crop, y_crop, z_crop)] = img[np.ix_(x_img, y_img, z_img)]
+    
     return new_img
 
-
+# ======================================================
+# ======================================================
 def get_pos_weight(data):
     """
     Gets the weight that should be used for positive labels in weighted cross entropy loss. 
@@ -488,7 +685,8 @@ def get_pos_weight(data):
     # print(zeros/ones)
     return zeros / ones
 
-
+# ======================================================
+# ======================================================
 def use_boundary_kernel(segmentation, kernel_size=7):
     """
     runs kernel on 3d segmentation and then returns 0's for nonboundary, 
@@ -499,24 +697,29 @@ def use_boundary_kernel(segmentation, kernel_size=7):
     """
     epsilon = sys.float_info.epsilon   
     segmentation = torch.from_numpy(segmentation)
-    #reshaping segmentation 
+    
+    # reshape segmentation 
     new_shape = (1,) + segmentation.shape
     reshaped_seg = torch.reshape(segmentation, new_shape)
-    #calculate appropriate padding based on kernel size
+    
+    # calculate appropriate padding based on kernel size
     padding = int((kernel_size-1)/2)
     
-    #use avg pooling to determine boundaries
+    # use avg pooling to determine boundaries
     seg_avg_pool =  avg_pool3d(reshaped_seg, 
-                                kernel_size= kernel_size, 
-                                stride =(1,1,1), 
-                                padding = padding, 
-                                count_include_pad = False) 
+                               kernel_size= kernel_size, 
+                               stride =(1,1,1), 
+                               padding = padding, 
+                               count_include_pad = False) 
+    
     reshaped_boundaries = (seg_avg_pool > epsilon) & (seg_avg_pool < 1-epsilon)
     reshaped_boundaries_int = reshaped_boundaries.int() 
     final_boundaries = torch.reshape(reshaped_boundaries_int, segmentation.shape)
+    
     return final_boundaries.numpy().astype(float)
 
-
+# ======================================================
+# ======================================================
 def load_img(path):
     """
     loads an image. 
@@ -528,8 +731,12 @@ def load_img(path):
     img = np.array(img.dataobj)
     return img.astype(float)
 
-
-def save_img(data, path, fn, affine=np.eye(4)):
+# ======================================================
+# ======================================================
+def save_img(data,
+             path,
+             fn,
+             affine=np.eye(4)):
     """
     saves an image as a nifti. 
 
@@ -540,9 +747,11 @@ def save_img(data, path, fn, affine=np.eye(4)):
     affine: the affine header of the image
     """
     img = nib.Nifti1Image(data, affine)
+
     nib.save(img, os.path.join(path, fn))
 
-
+# ======================================================
+# ======================================================
 def unnormalize_img(img, low, high):
     '''
     Unnormalize an image
@@ -550,43 +759,51 @@ def unnormalize_img(img, low, high):
     img =  img *(high-low) + low
     return img
 
-
+# ======================================================
+# ======================================================
 def best_metrics(csvfile, output_dir):
     """
     get best metrics from an existing csv file 
     """
     MAX_METRICS = ['val_dice','train_dice']
     MIN_METRICS = ['val_loss', 'train_loss']
-    #get the rows with the best of each metric, save to csv
+    # get the rows with the best of each metric, save to csv
     df = pd.read_csv(csvfile)
 
     best_metrics = []
+
     for metric in MAX_METRICS:
         ind = df.index[df[metric] == df[metric].max()]
         s = df.iloc[ind,:]
         if len(s) > 1:
             s = s.iloc[0,:]
         best_metrics.append(s)
+    
     for metric in MIN_METRICS:
         ind = df.index[df[metric] == df[metric].min()]
         s = df.iloc[ind,:]        
         if len(s) > 1:
             s = s.iloc[0,:]
         best_metrics.append(s)
+
     best_of_each_df = pd.concat(best_metrics)
-    best_of_each_df["optimized_metric"] = MAX_METRICS+MIN_METRICS
-    best_of_each_df.to_csv(os.path.join(output_dir,'best_metrics.csv'), index=False)
 
+    best_of_each_df["optimized_metric"] = MAX_METRICS + MIN_METRICS
 
+    best_of_each_df.to_csv(os.path.join(output_dir, 'best_metrics.csv'), index=False)
+
+# ======================================================
+# ======================================================
 def normalize_img(img, pct=99): 
     """
     normalizes an image to [0,1] by clipping values above the percentile
     and dividing by the percentile 
     """
-    scaled = img/(np.percentile(img, pct)-np.min(img))*255
+    scaled = img / (np.percentile(img, pct) - np.min(img)) * 255
     return np.clip(scaled, a_min=0, a_max=255)
 
-
+# ======================================================
+# ======================================================
 def parse_int_or_list(x):
     # converts string to an int or list of ints
     if not isinstance(x, str):
@@ -596,6 +813,8 @@ def parse_int_or_list(x):
     except ValueError:
         return [int(s.strip()) for s in x.split(',')]
 
+# ======================================================
+# ======================================================
 def parse_float_or_list(x):
     # converts string to a float or list of floats
     if not isinstance(x, str):
