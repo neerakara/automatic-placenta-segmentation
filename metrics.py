@@ -116,3 +116,38 @@ def dice_tensor(im1, im2, empty_score=0.0, thresh=0.5):
         return empty_score
     return 2. * intersection.sum().item() / im_sum.item()
     
+# ===================================================
+# Function to compute metrics
+# ===================================================
+def compute_metrics(image,
+                    result,
+                    reference,
+                    voxelspacing):
+
+    scores = np.zeros(5, dtype = np.float32) 
+    
+    # dice    
+    d = dice(im1 = result, im2 = reference)
+
+    # hd, hd95 and assd
+    if np.sum(result) > 0:
+        hd = Hausdorff_Distance(result = result, reference = reference, voxelspacing = voxelspacing)
+        hd95 = Hausdorff_Distance_95(result = result, reference = reference, voxelspacing = voxelspacing)
+        assd = ASSD(result = result, reference = reference, voxelspacing = voxelspacing)
+    else:
+        hd = np.nan
+        hd95 = np.nan
+        assd = np.nan
+    
+    # relative mean BOLD difference
+    bold_diff = mean_BOLD_difference(img_ref = image,
+                                     label_ref = (reference>0.5).astype(bool),
+                                     label_pred = result.astype(bool))
+
+    scores[0] = d    
+    scores[1] = hd
+    scores[2] = hd95
+    scores[3] = assd
+    scores[4] = bold_diff
+
+    return scores

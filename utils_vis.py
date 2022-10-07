@@ -148,6 +148,22 @@ def save_predictions_as_outlines(images,
 
 # ==========================================================
 # ==========================================================
+def plot_scatter(arr1,
+                 arr2,
+                 title,
+                 savepath,
+                 dpi = 200):
+
+    plt.figure(figsize = [10, 10])            
+    plt.scatter(arr1, arr2)
+    plt.xlabel('variance in predictions from multiple models', fontsize=50)
+    plt.ylabel(title, fontsize=50)
+    plt.savefig(savepath, bbox_inches='tight', pad_inches = 0, dpi = dpi) # 
+    plt.margins(0,0)
+    plt.close()
+
+# ==========================================================
+# ==========================================================
 def show_images_labels_predictions(images,
                                    labels,
                                    soft_predictions):
